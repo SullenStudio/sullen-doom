@@ -16,6 +16,75 @@ function blank() {
 
 const painted = (fb) => [...fb.data].filter((p) => p !== 0).length;
 
+/** Smallest axis-aligned box containing every painted pixel. */
+function boundingBox(fb) {
+  const { width, height, data } = fb;
+  let minX = width;
+  let maxX = -1;
+  let minY = height;
+  let maxY = -1;
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      if (data[y * width + x] !== 0) {
+        if (x < minX) minX = x;
+        if (x > maxX) maxX = x;
+        if (y < minY) minY = y;
+        if (y > maxY) maxY = y;
+      }
+    }
+  }
+  return { minX, maxX, minY, maxY };
+}
+
+/**
+ * True if every painted pixel is reachable from every other painted pixel
+ * via 4-connected neighbours — i.e. the shape is one silhouette, not
+ * several disconnected islands.
+ */
+function isSingleConnectedRegion(fb) {
+  const { width, height, data } = fb;
+  let start = -1;
+  let totalPainted = 0;
+  for (let i = 0; i < data.length; i++) {
+    if (data[i] !== 0) {
+      totalPainted++;
+      if (start === -1) start = i;
+    }
+  }
+  if (totalPainted === 0) return false;
+
+  const visited = new Uint8Array(width * height);
+  const stack = [start];
+  visited[start] = 1;
+  let reached = 0;
+  while (stack.length > 0) {
+    const i = stack.pop();
+    reached++;
+    const x = i % width;
+    const y = (i / width) | 0;
+    const neighbours = [];
+    if (x > 0) neighbours.push(i - 1);
+    if (x < width - 1) neighbours.push(i + 1);
+    if (y > 0) neighbours.push(i - width);
+    if (y < height - 1) neighbours.push(i + width);
+    for (const n of neighbours) {
+      if (data[n] !== 0 && !visited[n]) {
+        visited[n] = 1;
+        stack.push(n);
+      }
+    }
+  }
+  return reached === totalPainted;
+}
+
+// resize() in main.js clamps the internal buffer height to [120, 720]; the
+// weapon geometry must hold at both ends of that range, not just the sizes
+// that happened to be spot-checked during development.
+const CLAMP_EXTREME_SIZES = [
+  [480, 120],
+  [480, 720],
+];
+
 describe("renderWeapon", () => {
   it("draws the gun in the lower half of the screen", () => {
     const fb = blank();
@@ -75,6 +144,7 @@ describe("renderWeapon", () => {
       [480, 300],
       [480, 600],
       [96, 60],
+      ...CLAMP_EXTREME_SIZES,
     ]) {
       const fb = createFramebuffer(w, h);
       fb.clear(0);
@@ -87,6 +157,36 @@ describe("renderWeapon", () => {
       for (let x = 0; x < w; x++) {
         expect(fb.data[(h - 1) * w + x]).toBe(0);
       }
+    }
+  });
+
+  // Nothing above checks the *shape* of the gun, only that it stays clear of
+  // the edges. That leaves room for it to shrink to a sliver, or for its
+  // parts to drift apart into disconnected floating rectangles, without
+  // failing anything — which is most of what went wrong the first time this
+  // geometry was written. These two tests pin the shape down directly, at
+  // the resize() clamp extremes.
+  it("spans roughly a quarter to a third of the buffer width at its widest (recoil + flash)", () => {
+    for (const [w, h] of CLAMP_EXTREME_SIZES) {
+      const fb = createFramebuffer(w, h);
+      fb.clear(0);
+      renderWeapon(fb, { weapon: "gun", cooldown: 0.12, swing: 0, swingTime: 0.34 }, OPTS);
+      const { minX, maxX } = boundingBox(fb);
+      const widthFrac = (maxX - minX + 1) / w;
+      // Design target is ~0.28-0.29; the band is wide enough to survive
+      // ordinary art tweaks but would catch the gun being halved in size
+      // (~0.15) or blown out well past a third (~0.4+).
+      expect(widthFrac).toBeGreaterThan(0.2);
+      expect(widthFrac).toBeLessThan(0.35);
+    }
+  });
+
+  it("draws the gun as a single connected silhouette at its widest (recoil + flash)", () => {
+    for (const [w, h] of CLAMP_EXTREME_SIZES) {
+      const fb = createFramebuffer(w, h);
+      fb.clear(0);
+      renderWeapon(fb, { weapon: "gun", cooldown: 0.12, swing: 0, swingTime: 0.34 }, OPTS);
+      expect(isSingleConnectedRegion(fb)).toBe(true);
     }
   });
 });
