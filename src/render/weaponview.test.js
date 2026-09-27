@@ -61,6 +61,34 @@ describe("renderWeapon", () => {
       renderWeapon(small, { weapon: "gun", cooldown: 0, swing: 0, swingTime: 0.34 }, OPTS),
     ).not.toThrow();
   });
+
+  // The internal buffer is always 480 wide but its height varies with the
+  // window's aspect ratio (see resize() in main.js): 480x270 on 16:9,
+  // 480x300 on 16:10, and much taller on a narrow window. A layout that
+  // mixes width-scaled and height-scaled offsets can fit at one size and
+  // clip clean off the edge at another, which is exactly what happened
+  // before this test existed: the muzzle flash was drawn past the right
+  // edge of the buffer at 480x300 and was entirely invisible.
+  it("keeps a margin from the right and bottom edges at several buffer sizes", () => {
+    for (const [w, h] of [
+      [480, 270],
+      [480, 300],
+      [480, 600],
+      [96, 60],
+    ]) {
+      const fb = createFramebuffer(w, h);
+      fb.clear(0);
+      // cooldown > 0 draws the muzzle flash too, the widest state the gun
+      // ever reaches.
+      renderWeapon(fb, { weapon: "gun", cooldown: 0.12, swing: 0, swingTime: 0.34 }, OPTS);
+      for (let y = 0; y < h; y++) {
+        expect(fb.data[y * w + (w - 1)]).toBe(0);
+      }
+      for (let x = 0; x < w; x++) {
+        expect(fb.data[(h - 1) * w + x]).toBe(0);
+      }
+    }
+  });
 });
 
 describe("renderCrosshair", () => {
