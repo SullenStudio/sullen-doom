@@ -28,6 +28,11 @@ const MOVE = 2.8;
 const MOVE_PHONE = 7.4;
 const TURN = 2.4;
 const ENEMY_SPEED = 0.85;
+const BITE = 10;
+const IFRAMES = 0.65;
+const SWING_T = 0.34;
+const STICK_RANGE = 1.45;
+const STICK_DMG = 2;
 // Phone look: bigger = faster turn. Try 0.02–0.05.
 const LOOK_PHONE = 0.028;
 const LOOK_DESK = 0.0045;
@@ -53,6 +58,7 @@ const keys = new Set();
 const stick = { x: 0, y: 0 };
 const pointers = new Map();
 let firing = false;
+let weapon = "gun";
 let phase = "menu";
 
 let player = { x: 8, y: 8, a: 0 };
@@ -64,6 +70,8 @@ let reloading = 0;
 let kills = 0;
 let cooldown = 0;
 let hurt = 0;
+let iframes = 0;
+let swing = 0;
 let last = performance.now();
 let zbuf = new Float32Array(1);
 
@@ -103,6 +111,10 @@ function reset() {
   kills = 0;
   cooldown = 0;
   hurt = 0;
+  iframes = 0;
+  swing = 0;
+  weapon = "gun";
+  firing = false;
   phase = "play";
   overlay.classList.add("hidden");
   syncHud();
@@ -110,9 +122,20 @@ function reset() {
 
 function syncHud() {
   hpEl.textContent = `HP ${Math.max(0, Math.ceil(hp))}`;
-  ammoEl.textContent =
-    reloading > 0 ? "RELOAD" : `AMMO ${mag}/${reserve}`;
+  if (weapon === "stick") {
+    ammoEl.textContent = swing > 0 ? "SWING" : "STICK";
+  } else {
+    ammoEl.textContent =
+      reloading > 0 ? "RELOAD" : `AMMO ${mag}/${reserve}`;
+  }
   killEl.textContent = `KILLS ${kills}`;
+}
+
+function swapWeapon() {
+  if (phase !== "play") return;
+  weapon = weapon === "gun" ? "stick" : "gun";
+  firing = false;
+  syncHud();
 }
 
 function tryMove(nx, ny) {
@@ -128,6 +151,25 @@ function startReload() {
   syncHud();
 }
 
+function nearestFoe(maxDist, cone) {
+  const dirx = Math.cos(player.a);
+  const diry = Math.sin(player.a);
+  let best = null;
+  let bestD = maxDist;
+  for (const e of enemies) {
+    if (e.hp <= 0) continue;
+    const vx = e.x - player.x;
+    const vy = e.y - player.y;
+    const along = vx * dirx + vy * diry;
+    if (along < 0.15 || along > bestD) continue;
+    if (Math.abs(vx * diry - vy * dirx) > cone) continue;
+    if (blocked(player.x, player.y, e.x, e.y)) continue;
+    best = e;
+    bestD = along;
+  }
+  return best;
+}
+
 function shoot() {
   if (phase !== "play" || cooldown > 0 || reloading > 0) return;
   if (mag <= 0) {
@@ -136,22 +178,7 @@ function shoot() {
   }
   mag -= 1;
   cooldown = 0.16;
-  const dirx = Math.cos(player.a);
-  const diry = Math.sin(player.a);
-  let best = null;
-  let bestD = 8;
-  for (const e of enemies) {
-    if (e.hp <= 0) continue;
-    const vx = e.x - player.x;
-    const vy = e.y - player.y;
-    const along = vx * dirx + vy * diry;
-    if (along < 0.2 || along > bestD) continue;
-    const cross = Math.abs(vx * diry - vy * dirx);
-    if (cross > 0.35) continue;
-    if (blocked(player.x, player.y, e.x, e.y)) continue;
-    best = e;
-    bestD = along;
-  }
+  const best = nearestFoe(8, 0.35);
   if (best) {
     best.hp -= 1;
     best.hit = 0.15;
@@ -159,6 +186,23 @@ function shoot() {
   }
   if (mag <= 0) startReload();
   syncHud();
+}
+
+function melee() {
+  if (phase !== "play" || swing > 0) return;
+  swing = SWING_T;
+  const best = nearestFoe(STICK_RANGE, 0.55);
+  if (best) {
+    best.hp -= STICK_DMG;
+    best.hit = 0.2;
+    if (best.hp <= 0) kills += 1;
+  }
+  syncHud();
+}
+
+function attack() {
+  if (weapon === "stick") melee();
+  else shoot();
 }
 
 function analog() {
@@ -181,6 +225,8 @@ function update(dt) {
   if (phase !== "play") return;
   cooldown = Math.max(0, cooldown - dt);
   hurt = Math.max(0, hurt - dt);
+  iframes = Math.max(0, iframes - dt);
+  swing = Math.max(0, swing - dt);
   if (reloading > 0) {
     reloading -= dt;
     if (reloading <= 0) {
@@ -202,7 +248,7 @@ function update(dt) {
     player.x + (fx * move.y + rx * move.x) * speed * dt,
     player.y + (fy * move.y + ry * move.x) * speed * dt,
   );
-  if (firing) shoot();
+  if (firing) attack();
 
   for (const e of enemies) {
     if (e.hp <= 0) continue;
@@ -216,9 +262,10 @@ function update(dt) {
         e.x + (dx / dist) * ENEMY_SPEED * dt,
         e.y + (dy / dist) * ENEMY_SPEED * dt,
       );
-    } else {
-      hp -= 18 * dt;
-      hurt = 0.2;
+    } else if (iframes <= 0) {
+      hp -= BITE;
+      iframes = IFRAMES;
+      hurt = 0.35;
       if (hp <= 0) die();
     }
   }
@@ -323,6 +370,8 @@ function draw() {
     }
   }
 
+  drawWeapon(w, h);
+
   ctx.fillStyle = "#f0c400";
   ctx.fillRect(w / 2 - 1, h / 2 - 8, 2, 16);
   ctx.fillRect(w / 2 - 8, h / 2 - 1, 16, 2);
@@ -330,6 +379,46 @@ function draw() {
     ctx.fillStyle = `rgba(180,20,10,${hurt})`;
     ctx.fillRect(0, 0, w, h);
   }
+  if (iframes > 0 && phase === "play") {
+    ctx.fillStyle = `rgba(255,255,255,${0.1 * Math.abs(Math.sin(iframes * 28))})`;
+    ctx.fillRect(0, 0, w, h);
+  }
+}
+
+function drawWeapon(w, h) {
+  if (phase !== "play") return;
+  ctx.save();
+  const showStick = weapon === "stick" || swing > 0;
+  if (showStick) {
+    const t = swing > 0 ? 1 - swing / SWING_T : 0;
+    const lift = swing > 0 ? Math.sin(t * Math.PI) * h * 0.08 : 0;
+    ctx.translate(w * 0.7, h * 1.02 - lift);
+    ctx.rotate(swing > 0 ? -1.15 + t * 1.85 : -0.42);
+    ctx.fillStyle = "#4a2a12";
+    ctx.fillRect(-8, -h * 0.5, 16, h * 0.52);
+    ctx.fillStyle = "#7a4a22";
+    ctx.fillRect(-6, -h * 0.48, 12, h * 0.48);
+    ctx.fillStyle = "#2a1608";
+    ctx.fillRect(-11, -h * 0.54, 22, 18);
+    ctx.fillStyle = "#c8a060";
+    ctx.fillRect(-11, -h * 0.54, 22, 5);
+  } else {
+    const kick = cooldown > 0 ? 10 : 0;
+    ctx.translate(w * 0.62, h * 0.98 + kick);
+    ctx.fillStyle = "#1a140e";
+    ctx.fillRect(-22, -h * 0.1, 28, 48);
+    ctx.fillStyle = "#2c2418";
+    ctx.fillRect(-6, -h * 0.2, 78, 32);
+    ctx.fillStyle = "#3a3224";
+    ctx.fillRect(48, -h * 0.24, 54, 18);
+    ctx.fillStyle = "#111";
+    ctx.fillRect(96, -h * 0.22, 14, 10);
+    if (cooldown > 0.08) {
+      ctx.fillStyle = "#ffd86a";
+      ctx.fillRect(108, -h * 0.24, 22, 12);
+    }
+  }
+  ctx.restore();
 }
 
 function resize() {
@@ -358,9 +447,19 @@ function setStickFromPoint(clientX, clientY, origin) {
 window.addEventListener("keydown", (e) => {
   keys.add(e.code);
   if (e.code === "KeyR") startReload();
+  if (e.code === "KeyQ" || e.code === "KeyE") swapWeapon();
+  if (e.code === "Digit1") {
+    weapon = "gun";
+    syncHud();
+  }
+  if (e.code === "Digit2") {
+    weapon = "stick";
+    syncHud();
+  }
+  if (e.code === "KeyF") melee();
   if (e.code === "Space") {
     e.preventDefault();
-    if (phase === "play") shoot();
+    if (phase === "play") attack();
   }
   if ((e.code === "Enter" || e.code === "Space") && phase !== "play") reset();
 });
@@ -376,7 +475,7 @@ canvas.addEventListener("pointerdown", (e) => {
     return;
   }
   pointers.set(e.pointerId, { kind: "look", x: e.clientX, y: e.clientY });
-  if (!phone) shoot();
+  if (!phone) attack();
 });
 canvas.addEventListener("pointermove", (e) => {
   const p = pointers.get(e.pointerId);
@@ -428,11 +527,16 @@ const clearStick = (e) => {
 stickEl.addEventListener("pointerup", clearStick);
 stickEl.addEventListener("pointercancel", clearStick);
 
+document.getElementById("btn-swap").addEventListener("pointerdown", (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  swapWeapon();
+});
 document.getElementById("btn-fire").addEventListener("pointerdown", (e) => {
   e.preventDefault();
   e.stopPropagation();
   firing = true;
-  shoot();
+  attack();
 });
 document.getElementById("btn-fire").addEventListener("pointerup", () => {
   firing = false;

@@ -72,7 +72,8 @@ html.phone #hud {
 }
 
 #btn-play,
-#btn-fire {
+#btn-fire,
+#btn-swap {
   border: 0;
   border-radius: 16px;
   font: 800 20px/1 Arial, sans-serif;
@@ -110,6 +111,22 @@ html.phone #mobile-ui {
   border: 3px solid rgba(180, 70, 48, 0.38);
 }
 
+#mobile-actions {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+}
+
+#btn-swap {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  background: rgba(40, 16, 12, 0.28);
+  border: 3px solid rgba(180, 70, 48, 0.38);
+  color: rgba(244, 228, 200, 0.88);
+  font-size: 13px;
+}
+
 #btn-fire {
   width: 96px;
   height: 96px;
@@ -119,6 +136,7 @@ html.phone #mobile-ui {
 }
 
 #btn-play:active,
-#btn-fire:active {
+#btn-fire:active,
+#btn-swap:active {
   filter: brightness(1.15);
 }
