@@ -5,6 +5,7 @@ import {
   TEXTURE_SLOT,
   TEX_SIZE,
   generateTextures,
+  generateTileAt,
   makeEnemySprite,
 } from "./textures.js";
 
@@ -58,70 +59,22 @@ describe("generateTextures", () => {
     expect(TEX_SIZE % NOISE_LATTICE).toBe(0);
   });
 
-  it("wraps seamlessly across multiple seeds (consistent structure)", () => {
-    // Verify that wrap boundaries produce consistent discontinuity patterns
-    // across different seeds. This guards against gross errors in frequency
-    // multipliers: if a multiplier becomes fractional, the wrap patterns will
-    // diverge from the deterministic, reproducible structure.
-    // The test samples several seeds and verifies that wrap/interior ratios
-    // are stable, which would break if frequency arithmetic is corrupted.
-    const testSeeds = [1337, 4242, 9999, 12345];
-    const ratios = {};
+  it("tiles are periodic with period TEX_SIZE (bit-exact)", () => {
+    // A seamless tile repeats with period TEX_SIZE on both axes.
+    // This is a bit-exact property: the tile at origin (0, 0) must be
+    // pixel-identical to the tile at (TEX_SIZE, 0) and (0, TEX_SIZE).
+    // A fractional frequency multiplier breaks this: for m=1.5, the noise
+    // shift is 12 lattice units (which repeats every 8), producing completely
+    // different pixels. A structural period that doesn't divide TEX_SIZE
+    // also breaks periodicity.
+    const seed = 1337;
+    for (let slot = 0; slot < Object.keys(TEXTURE_SLOT).length; slot++) {
+      const origin_0_0 = generateTileAt(slot, seed, 0, 0);
+      const origin_W_0 = generateTileAt(slot, seed, TEX_SIZE, 0);
+      const origin_0_W = generateTileAt(slot, seed, 0, TEX_SIZE);
 
-    for (const seed of testSeeds) {
-      const textures = generateTextures(seed);
-      for (let i = 0; i < textures.length; i++) {
-        const tex = textures[i];
-        const pixels = tex.pixels;
-        const textureName = Object.keys(TEXTURE_SLOT)[i];
-        const key = `${textureName}`;
-
-        if (!ratios[key]) ratios[key] = [];
-
-        // Collect all wrap and interior discontinuities
-        const wrapDiffs = [];
-        for (let y = 0; y < TEX_SIZE; y++) {
-          const left = pixels[y * TEX_SIZE + (TEX_SIZE - 1)];
-          const right = pixels[y * TEX_SIZE + 0];
-          wrapDiffs.push(Math.abs(left - right));
-        }
-        for (let x = 0; x < TEX_SIZE; x++) {
-          const top = pixels[((TEX_SIZE - 1) * TEX_SIZE) + x];
-          const bottom = pixels[0 * TEX_SIZE + x];
-          wrapDiffs.push(Math.abs(top - bottom));
-        }
-
-        const interiorDiffs = [];
-        for (let y = 0; y < TEX_SIZE; y++) {
-          for (let x = 1; x < TEX_SIZE; x++) {
-            const left = pixels[y * TEX_SIZE + (x - 1)];
-            const right = pixels[y * TEX_SIZE + x];
-            interiorDiffs.push(Math.abs(left - right));
-          }
-        }
-        for (let y = 1; y < TEX_SIZE; y++) {
-          for (let x = 0; x < TEX_SIZE; x++) {
-            const top = pixels[((y - 1) * TEX_SIZE) + x];
-            const bottom = pixels[(y * TEX_SIZE) + x];
-            interiorDiffs.push(Math.abs(top - bottom));
-          }
-        }
-
-        const wrapMed = percentile(wrapDiffs, 50);
-        const interiorMed = percentile(interiorDiffs, 50);
-        const ratio = interiorMed > 0 ? wrapMed / interiorMed : wrapMed;
-        ratios[key].push(ratio);
-      }
-    }
-
-    // Verify ratios are consistent across seeds (low variance means structure is stable)
-    for (const key in ratios) {
-      const values = ratios[key];
-      const mean = values.reduce((a, b) => a + b, 0) / values.length;
-      const variance = values.reduce((a, b) => a + Math.abs(b - mean), 0) / values.length;
-      // Stable structure should have low variance; large variance indicates
-      // the structure is seed-dependent, which would happen if frequency math is wrong
-      expect(variance).toBeLessThanOrEqual(0.6);
+      expect(origin_0_0.pixels).toEqual(origin_W_0.pixels);
+      expect(origin_0_0.pixels).toEqual(origin_0_W.pixels);
     }
   });
 });
@@ -151,11 +104,3 @@ describe("makeEnemySprite", () => {
     }
   });
 });
-
-/** Compute a percentile of a sorted array. */
-function percentile(arr, p) {
-  if (arr.length === 0) return 0;
-  const sorted = [...arr].sort((a, b) => a - b);
-  const index = Math.floor((p / 100) * (sorted.length - 1));
-  return sorted[index];
-}

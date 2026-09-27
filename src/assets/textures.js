@@ -39,7 +39,7 @@ function blank() {
   return new Uint8Array(TEX_SIZE * TEX_SIZE);
 }
 
-function brick(rng) {
+function brick(rng, ox = 0, oy = 0) {
   const noise = makeValueNoise(rng, NOISE_LATTICE);
   const px = blank();
   // Both periods divide TEX_SIZE, so the courses continue across the seam.
@@ -47,12 +47,14 @@ function brick(rng) {
   const BRICK_W = 32;
   const MORTAR = 2;
   for (let y = 0; y < TEX_SIZE; y++) {
-    const row = Math.floor(y / BRICK_H);
+    const gy = y + oy;
+    const row = Math.floor(gy / BRICK_H);
     const offset = (row % 2) * (BRICK_W / 2);
     for (let x = 0; x < TEX_SIZE; x++) {
-      const lx = (x + offset) % BRICK_W;
-      const ly = y % BRICK_H;
-      const grain = fbm(noise, x * STEP_UV * 2, y * STEP_UV * 2, 3);
+      const gx = x + ox;
+      const lx = (gx + offset) % BRICK_W;
+      const ly = gy % BRICK_H;
+      const grain = fbm(noise, gx * STEP_UV * 2, gy * STEP_UV * 2, 3);
       if (ly < MORTAR || lx < MORTAR) {
         px[y * TEX_SIZE + x] = step(RAMP.concrete, 0.2 + grain * 0.25);
       } else {
@@ -68,15 +70,17 @@ function brick(rng) {
   return px;
 }
 
-function metal(rng) {
+function metal(rng, ox = 0, oy = 0) {
   const noise = makeValueNoise(rng, NOISE_LATTICE);
   const px = blank();
   for (let y = 0; y < TEX_SIZE; y++) {
+    const gy = y + oy;
     for (let x = 0; x < TEX_SIZE; x++) {
+      const gx = x + ox;
       // Four periods across, one down: stretched noise reads as brushing.
-      const brushed = fbm(noise, x * STEP_UV * 4, y * STEP_UV, 3);
-      const rot = fbm(noise, x * STEP_UV + 20, y * STEP_UV + 20, 2);
-      const plate = y % 32 < 2 || x % 32 < 2 ? -0.25 : 0;
+      const brushed = fbm(noise, gx * STEP_UV * 4, gy * STEP_UV, 3);
+      const rot = fbm(noise, gx * STEP_UV + 20, gy * STEP_UV + 20, 2);
+      const plate = gy % 32 < 2 || gx % 32 < 2 ? -0.25 : 0;
       const ramp = rot > 0.58 ? RAMP.rust : RAMP.concrete;
       px[y * TEX_SIZE + x] = step(ramp, 0.35 + brushed * 0.5 + plate);
     }
@@ -84,13 +88,15 @@ function metal(rng) {
   return px;
 }
 
-function concrete(rng) {
+function concrete(rng, ox = 0, oy = 0) {
   const noise = makeValueNoise(rng, NOISE_LATTICE);
   const px = blank();
   for (let y = 0; y < TEX_SIZE; y++) {
+    const gy = y + oy;
     for (let x = 0; x < TEX_SIZE; x++) {
-      const grain = fbm(noise, x * STEP_UV * 3, y * STEP_UV * 3, 4);
-      const crack = fbm(noise, x * STEP_UV + 7, y * STEP_UV + 7, 2);
+      const gx = x + ox;
+      const grain = fbm(noise, gx * STEP_UV * 3, gy * STEP_UV * 3, 4);
+      const crack = fbm(noise, gx * STEP_UV + 7, gy * STEP_UV + 7, 2);
       const dark = crack > 0.46 && crack < 0.5 ? -0.3 : 0;
       px[y * TEX_SIZE + x] = step(RAMP.concrete, 0.3 + grain * 0.5 + dark);
     }
@@ -98,13 +104,15 @@ function concrete(rng) {
   return px;
 }
 
-function flesh(rng) {
+function flesh(rng, ox = 0, oy = 0) {
   const noise = makeValueNoise(rng, NOISE_LATTICE);
   const px = blank();
   for (let y = 0; y < TEX_SIZE; y++) {
+    const gy = y + oy;
     for (let x = 0; x < TEX_SIZE; x++) {
-      const lumpy = fbm(noise, x * STEP_UV, y * STEP_UV, 3);
-      const veins = fbm(noise, x * STEP_UV * 2 + 11, y * STEP_UV * 2 + 11, 2);
+      const gx = x + ox;
+      const lumpy = fbm(noise, gx * STEP_UV, gy * STEP_UV, 3);
+      const veins = fbm(noise, gx * STEP_UV * 2 + 11, gy * STEP_UV * 2 + 11, 2);
       const vein = veins > 0.62 ? 0.3 : 0;
       px[y * TEX_SIZE + x] = step(RAMP.flesh, 0.25 + lumpy * 0.55 + vein);
     }
@@ -112,16 +120,18 @@ function flesh(rng) {
   return px;
 }
 
-function tech(rng) {
+function tech(rng, ox = 0, oy = 0) {
   const noise = makeValueNoise(rng, NOISE_LATTICE);
   const px = blank();
   for (let y = 0; y < TEX_SIZE; y++) {
+    const gy = y + oy;
     for (let x = 0; x < TEX_SIZE; x++) {
-      const grain = fbm(noise, x * STEP_UV * 4, y * STEP_UV * 4, 2);
-      const inPanel = x % 16 > 1 && y % 16 > 1;
+      const gx = x + ox;
+      const grain = fbm(noise, gx * STEP_UV * 4, gy * STEP_UV * 4, 2);
+      const inPanel = gx % 16 > 1 && gy % 16 > 1;
       if (!inPanel) {
         px[y * TEX_SIZE + x] = step(RAMP.tech, 0.15 + grain * 0.2);
-      } else if (x % 16 === 8 && y % 16 > 4 && y % 16 < 12) {
+      } else if (gx % 16 === 8 && gy % 16 > 4 && gy % 16 < 12) {
         // A lit strip on each panel gives the corridor something to glint.
         px[y * TEX_SIZE + x] = ACCENT.plasma;
       } else {
@@ -132,25 +142,29 @@ function tech(rng) {
   return px;
 }
 
-function floorTile(rng) {
+function floorTile(rng, ox = 0, oy = 0) {
   const noise = makeValueNoise(rng, NOISE_LATTICE);
   const px = blank();
   for (let y = 0; y < TEX_SIZE; y++) {
+    const gy = y + oy;
     for (let x = 0; x < TEX_SIZE; x++) {
-      const grain = fbm(noise, x * STEP_UV * 2, y * STEP_UV * 2, 4);
-      const grout = x % 16 < 1 || y % 16 < 1 ? -0.3 : 0;
+      const gx = x + ox;
+      const grain = fbm(noise, gx * STEP_UV * 2, gy * STEP_UV * 2, 4);
+      const grout = gx % 16 < 1 || gy % 16 < 1 ? -0.3 : 0;
       px[y * TEX_SIZE + x] = step(RAMP.concrete, 0.22 + grain * 0.45 + grout);
     }
   }
   return px;
 }
 
-function ceilingTile(rng) {
+function ceilingTile(rng, ox = 0, oy = 0) {
   const noise = makeValueNoise(rng, NOISE_LATTICE);
   const px = blank();
   for (let y = 0; y < TEX_SIZE; y++) {
+    const gy = y + oy;
     for (let x = 0; x < TEX_SIZE; x++) {
-      const grain = fbm(noise, x * STEP_UV * 2, y * STEP_UV * 2, 3);
+      const gx = x + ox;
+      const grain = fbm(noise, gx * STEP_UV * 2, gy * STEP_UV * 2, 3);
       px[y * TEX_SIZE + x] = step(RAMP.rust, 0.12 + grain * 0.3);
     }
   }
@@ -165,6 +179,22 @@ export function generateTextures(seed = 1337) {
     size: TEX_SIZE,
     pixels: build(makeRng(seed + i * 7919)),
   }));
+}
+
+/**
+ * Generate a tile at a specific origin, for testing periodicity.
+ * The tile at (ox, oy) should be pixel-identical to the tile at (ox + TEX_SIZE, oy)
+ * and at (ox, oy + TEX_SIZE) if the texture is seamless.
+ */
+export function generateTileAt(slot, seed = 1337, ox = 0, oy = 0) {
+  const builders = [brick, metal, concrete, flesh, tech, floorTile, ceilingTile];
+  if (slot < 0 || slot >= builders.length) {
+    throw new Error(`Invalid texture slot: ${slot}`);
+  }
+  return {
+    size: TEX_SIZE,
+    pixels: builders[slot](makeRng(seed + slot * 7919), ox, oy),
+  };
 }
 
 const SPRITE_W = 32;
