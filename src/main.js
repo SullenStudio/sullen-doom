@@ -1,5 +1,6 @@
 import "./style.css";
 import { TEXTURE_SLOT, generateTextures, makeEnemySprite } from "./assets/textures.js";
+import { createInput, readMoveAxes } from "./core/input.js";
 import { parseMap } from "./game/map.js";
 import { renderFloorCeiling } from "./render/floors.js";
 import { createPresenter } from "./render/framebuffer.js";
@@ -33,8 +34,7 @@ const map = parsed.map;
 const FOV = Math.PI / 3;
 const MAG_SIZE = 8;
 const RELOAD_T = 0.85;
-const MOVE = 2.8;
-const MOVE_PHONE = 7.4;
+const MOVE = 3.4;
 const TURN = 2.4;
 const ENEMY_SPEED = 0.85;
 const BITE = 10;
@@ -63,12 +63,22 @@ const hpEl = document.getElementById("hp");
 const ammoEl = document.getElementById("ammo");
 const killEl = document.getElementById("kills");
 
-const keys = new Set();
-const stick = { x: 0, y: 0 };
-const pointers = new Map();
 let firing = false;
 let weapon = "gun";
 let phase = "menu";
+
+const input = createInput(canvas, {
+  phone,
+  stickPx: STICK_PX,
+  lookDesktop: LOOK_DESK,
+  lookPhone: LOOK_PHONE,
+  onAttack: () => attack(),
+  onSwap: () => swapWeapon(),
+  onReload: () => startReload(),
+  onRestart: () => reset(),
+  isPlaying: () => phase === "play",
+});
+if (phone) input.bindStickPad(document.getElementById("stick"));
 
 let player = { x: 8, y: 8, a: 0 };
 let enemies = [];
@@ -212,22 +222,6 @@ function attack() {
   else shoot();
 }
 
-function analog() {
-  let mx = 0;
-  let my = 0;
-  if (keys.has("KeyW") || keys.has("ArrowUp")) my += 1;
-  if (keys.has("KeyS") || keys.has("ArrowDown")) my -= 1;
-  if (keys.has("KeyA") || keys.has("ArrowLeft")) mx -= 1;
-  if (keys.has("KeyD") || keys.has("ArrowRight")) mx += 1;
-  mx += stick.x;
-  my += -stick.y;
-  const raw = Math.hypot(mx, my);
-  if (raw < 0.04) return { x: 0, y: 0 };
-  const mag = Math.min(1, (raw - 0.02) / 0.98);
-  const boost = phone ? 0.85 + 0.15 * mag : mag;
-  return { x: (mx / raw) * boost, y: (my / raw) * boost };
-}
-
 function update(dt) {
   if (phase !== "play") return;
   cooldown = Math.max(0, cooldown - dt);
@@ -246,8 +240,9 @@ function update(dt) {
     }
   }
 
-  const move = analog();
-  const speed = phone ? MOVE_PHONE : MOVE;
+  player.a += input.consumeLook();
+  const move = readMoveAxes(input.keys, input.stick);
+  const speed = MOVE;
   const fx = Math.cos(player.a);
   const fy = Math.sin(player.a);
   const rx = -fy;
@@ -256,7 +251,7 @@ function update(dt) {
     player.x + (fx * move.y + rx * move.x) * speed * dt,
     player.y + (fy * move.y + ry * move.x) * speed * dt,
   );
-  if (firing) attack();
+  if (input.firing || firing) attack();
 
   for (const e of enemies) {
     if (e.hp <= 0) continue;
@@ -294,6 +289,7 @@ function die() {
   overlay.querySelector("p:nth-of-type(2)").textContent =
     `kills ${kills}   best ${best}`;
   playBtn.textContent = "AGAIN";
+  if (document.pointerLockElement) document.exitPointerLock();
 }
 
 function draw() {
@@ -385,97 +381,7 @@ function loop(now) {
   requestAnimationFrame(loop);
 }
 
-function setStickFromPoint(clientX, clientY, origin) {
-  const dx = (clientX - origin.x) / STICK_PX;
-  const dy = (clientY - origin.y) / STICK_PX;
-  const l = Math.hypot(dx, dy) || 1;
-  const cap = Math.min(1.15, l);
-  stick.x = (dx / l) * cap;
-  stick.y = (dy / l) * cap;
-}
-
-window.addEventListener("keydown", (e) => {
-  keys.add(e.code);
-  if (e.code === "KeyR") startReload();
-  if (e.code === "KeyQ" || e.code === "KeyE") swapWeapon();
-  if (e.code === "Digit1") {
-    weapon = "gun";
-    syncHud();
-  }
-  if (e.code === "Digit2") {
-    weapon = "stick";
-    syncHud();
-  }
-  if (e.code === "KeyF") melee();
-  if (e.code === "Space") {
-    e.preventDefault();
-    if (phase === "play") attack();
-  }
-  if ((e.code === "Enter" || e.code === "Space") && phase !== "play") reset();
-});
-window.addEventListener("keyup", (e) => keys.delete(e.code));
-
-canvas.addEventListener("pointerdown", (e) => {
-  if (phase !== "play") return;
-  canvas.setPointerCapture(e.pointerId);
-  const left = e.clientX < window.innerWidth * 0.42;
-  if (phone && left) {
-    pointers.set(e.pointerId, { kind: "move", x: e.clientX, y: e.clientY });
-    setStickFromPoint(e.clientX, e.clientY, { x: e.clientX, y: e.clientY });
-    return;
-  }
-  pointers.set(e.pointerId, { kind: "look", x: e.clientX, y: e.clientY });
-  if (!phone) attack();
-});
-canvas.addEventListener("pointermove", (e) => {
-  const p = pointers.get(e.pointerId);
-  if (!p) return;
-  if (p.kind === "look") {
-    const sens = phone ? LOOK_PHONE : LOOK_DESK;
-    player.a += (e.clientX - p.x) * sens;
-    p.x = e.clientX;
-    p.y = e.clientY;
-    return;
-  }
-  setStickFromPoint(e.clientX, e.clientY, p);
-});
-function endPointer(e) {
-  const p = pointers.get(e.pointerId);
-  pointers.delete(e.pointerId);
-  if (p?.kind === "move") {
-    stick.x = 0;
-    stick.y = 0;
-  }
-}
-canvas.addEventListener("pointerup", endPointer);
-canvas.addEventListener("pointercancel", endPointer);
-
 playBtn.addEventListener("click", () => reset());
-
-const stickEl = document.getElementById("stick");
-function setStickPad(e) {
-  const r = stickEl.getBoundingClientRect();
-  const cx = r.left + r.width / 2;
-  const cy = r.top + r.height / 2;
-  setStickFromPoint(e.clientX, e.clientY, { x: cx, y: cy });
-}
-stickEl.addEventListener("pointerdown", (e) => {
-  e.stopPropagation();
-  stickEl.setPointerCapture(e.pointerId);
-  pointers.set(e.pointerId, { kind: "move", x: e.clientX, y: e.clientY });
-  setStickPad(e);
-});
-stickEl.addEventListener("pointermove", (e) => {
-  if (!pointers.has(e.pointerId)) return;
-  setStickPad(e);
-});
-const clearStick = (e) => {
-  pointers.delete(e.pointerId);
-  stick.x = 0;
-  stick.y = 0;
-};
-stickEl.addEventListener("pointerup", clearStick);
-stickEl.addEventListener("pointercancel", clearStick);
 
 document.getElementById("btn-swap").addEventListener("pointerdown", (e) => {
   e.preventDefault();
