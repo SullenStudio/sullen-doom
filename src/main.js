@@ -1,10 +1,11 @@
 import "./style.css";
-import { TEXTURE_SLOT, generateTextures } from "./assets/textures.js";
+import { TEXTURE_SLOT, generateTextures, makeEnemySprite } from "./assets/textures.js";
 import { parseMap } from "./game/map.js";
 import { renderFloorCeiling } from "./render/floors.js";
 import { createPresenter } from "./render/framebuffer.js";
 import { PALETTE, PALETTE_SIZE, SHADE_LEVELS, buildShadeTable } from "./render/palette.js";
 import { makeCamera } from "./render/raycast.js";
+import { renderSprites } from "./render/sprites.js";
 import { renderWalls } from "./render/walls.js";
 
 const MAP_LINES = [
@@ -86,6 +87,7 @@ const MAX_DIST = 32;
 
 const textures = generateTextures(1337);
 const shadeTable = buildShadeTable(PALETTE, SHADE_LEVELS);
+const enemyBitmap = makeEnemySprite(7);
 
 let presenter = null;
 let zbuf = new Float32Array(1);
@@ -313,6 +315,25 @@ function draw() {
     lightBoost,
     horizon,
   });
+
+  renderSprites(
+    fb,
+    camera,
+    enemies.filter((e) => e.hp > 0).map((e) => ({
+      x: e.x,
+      y: e.y,
+      hit: e.hit,
+      bitmap: enemyBitmap,
+    })),
+    {
+      shadeTable,
+      paletteSize: PALETTE_SIZE,
+      zbuf,
+      lightBoost,
+      horizon,
+      scale: 0.7,
+    },
+  );
 
   presenter.present(ctx, canvas.width, canvas.height);
 }
