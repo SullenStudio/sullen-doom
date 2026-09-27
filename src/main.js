@@ -1,26 +1,32 @@
 import "./style.css";
+import { generateTextures } from "./assets/textures.js";
+import { parseMap } from "./game/map.js";
+import { createPresenter } from "./render/framebuffer.js";
+import { PALETTE, PALETTE_SIZE, SHADE_LEVELS, buildShadeTable } from "./render/palette.js";
+import { makeCamera } from "./render/raycast.js";
+import { renderWalls } from "./render/walls.js";
 
-const MAP = [
+const MAP_LINES = [
   "################",
   "#..............#",
-  "#..##......##..#",
+  "#..22......22..#",
   "#..............#",
-  "##....####....##",
+  "##....3333....##",
   "#..............#",
   "#..E........E..#",
   "#......P.......#",
   "#..E........E..#",
   "#..............#",
-  "##....####....##",
+  "##....3333....##",
   "#..............#",
-  "#..##......##..#",
+  "#..55......55..#",
   "#..............#",
   "#......E.......#",
   "################",
 ];
 
-const COLS = MAP[0].length;
-const ROWS = MAP.length;
+const parsed = parseMap(MAP_LINES);
+const map = parsed.map;
 const FOV = Math.PI / 3;
 const MAG_SIZE = 8;
 const RELOAD_T = 0.85;
@@ -73,14 +79,16 @@ let hurt = 0;
 let iframes = 0;
 let swing = 0;
 let last = performance.now();
-let zbuf = new Float32Array(1);
 
-function wall(x, y) {
-  const cx = Math.floor(x);
-  const cy = Math.floor(y);
-  if (cx < 0 || cy < 0 || cx >= COLS || cy >= ROWS) return true;
-  return MAP[cy][cx] === "#";
-}
+const INTERNAL_WIDTH = 480;
+const MAX_DIST = 32;
+
+const textures = generateTextures(1337);
+const shadeTable = buildShadeTable(PALETTE, SHADE_LEVELS);
+
+let presenter = null;
+let zbuf = new Float32Array(1);
+let lightBoost = 0;
 
 function blocked(ax, ay, bx, by) {
   const dx = bx - ax;
@@ -89,21 +97,15 @@ function blocked(ax, ay, bx, by) {
   const steps = Math.max(2, Math.ceil(dist / 0.08));
   for (let i = 1; i < steps; i++) {
     const t = i / steps;
-    if (wall(ax + dx * t, ay + dy * t)) return true;
+    if (map.isSolidAt(ax + dx * t, ay + dy * t)) return true;
   }
   return false;
 }
 
 function reset() {
-  player = { x: 8, y: 8, a: 0 };
-  enemies = [];
-  for (let y = 0; y < ROWS; y++) {
-    for (let x = 0; x < COLS; x++) {
-      const ch = MAP[y][x];
-      if (ch === "P") player = { x: x + 0.5, y: y + 0.5, a: 0 };
-      if (ch === "E") enemies.push({ x: x + 0.5, y: y + 0.5, hp: 2, hit: 0 });
-    }
-  }
+  player = { ...parsed.playerStart };
+  player.a = parsed.playerStart.angle;
+  enemies = parsed.enemySpawns.map((s) => ({ x: s.x, y: s.y, hp: 2, hit: 0 }));
   hp = 100;
   mag = MAG_SIZE;
   reserve = 40;
@@ -139,8 +141,8 @@ function swapWeapon() {
 }
 
 function tryMove(nx, ny) {
-  if (!wall(nx, player.y)) player.x = nx;
-  if (!wall(player.x, ny)) player.y = ny;
+  if (!map.isSolidAt(nx, player.y)) player.x = nx;
+  if (!map.isSolidAt(player.x, ny)) player.y = ny;
 }
 
 function startReload() {
@@ -273,8 +275,8 @@ function update(dt) {
 }
 
 function tryEnemyMove(e, nx, ny) {
-  if (!wall(nx, e.y)) e.x = nx;
-  if (!wall(e.x, ny)) e.y = ny;
+  if (!map.isSolidAt(nx, e.y)) e.x = nx;
+  if (!map.isSolidAt(e.x, ny)) e.y = ny;
 }
 
 function die() {
@@ -288,143 +290,41 @@ function die() {
   playBtn.textContent = "AGAIN";
 }
 
-function cast(angle) {
-  const sin = Math.sin(angle);
-  const cos = Math.cos(angle);
-  let dist = 0;
-  let hit = 0;
-  let side = 0;
-  const step = 0.02;
-  while (dist < 14) {
-    dist += step;
-    const x = player.x + cos * dist;
-    const y = player.y + sin * dist;
-    if (wall(x, y)) {
-      hit = 1;
-      const fx = x - Math.floor(x);
-      const fy = y - Math.floor(y);
-      side = Math.min(fx, 1 - fx) < Math.min(fy, 1 - fy) ? 1 : 0;
-      break;
-    }
-  }
-  return { dist: dist * Math.cos(angle - player.a), hit, side };
-}
-
 function draw() {
-  const w = canvas.width;
-  const h = canvas.height;
-  ctx.fillStyle = "#3a1410";
-  ctx.fillRect(0, 0, w, h / 2);
-  ctx.fillStyle = "#1a0c08";
-  ctx.fillRect(0, h / 2, w, h / 2);
+  const fb = presenter.fb;
+  const camera = makeCamera(player.x, player.y, player.a, FOV);
+  const horizon = fb.height >> 1;
 
-  const rays = Math.max(80, Math.floor(w / 2));
-  if (zbuf.length !== rays) zbuf = new Float32Array(rays);
-  zbuf.fill(99);
+  fb.fillRect(0, 0, fb.width, horizon, shadeTable[6 * PALETTE_SIZE + 12]);
+  fb.fillRect(0, horizon, fb.width, fb.height - horizon,
+    shadeTable[6 * PALETTE_SIZE + 0]);
 
-  for (let i = 0; i < rays; i++) {
-    const a = player.a - FOV / 2 + (i / rays) * FOV;
-    const { dist, hit, side } = cast(a);
-    if (!hit) continue;
-    zbuf[i] = dist;
-    const colH = Math.min(h, (h * 0.85) / Math.max(0.12, dist));
-    const shade = Math.max(28, 190 - dist * 22 - (side ? 30 : 0));
-    ctx.fillStyle = `rgb(${shade + 40},${shade * 0.28},${shade * 0.18})`;
-    ctx.fillRect((i * w) / rays, (h - colH) / 2, w / rays + 1, colH);
-  }
+  renderWalls(fb, map, camera, textures, {
+    shadeTable,
+    paletteSize: PALETTE_SIZE,
+    zbuf,
+    maxDist: MAX_DIST,
+    lightBoost,
+    horizon,
+  });
 
-  const sprites = enemies
-    .filter((e) => e.hp > 0 && !blocked(player.x, player.y, e.x, e.y))
-    .map((e) => {
-      const dx = e.x - player.x;
-      const dy = e.y - player.y;
-      return { e, dist: Math.hypot(dx, dy), dx, dy };
-    })
-    .sort((a, b) => b.dist - a.dist);
-
-  for (const s of sprites) {
-    let ang = Math.atan2(s.dy, s.dx) - player.a;
-    while (ang > Math.PI) ang -= Math.PI * 2;
-    while (ang < -Math.PI) ang += Math.PI * 2;
-    if (Math.abs(ang) > FOV) continue;
-    const size = Math.min(h, (h * 0.7) / Math.max(0.2, s.dist));
-    const cx = w / 2 + (ang / (FOV / 2)) * (w / 2);
-    const sy = h / 2 - size * 0.15;
-    const left = Math.floor(cx - size * 0.28);
-    const right = Math.ceil(cx + size * 0.28);
-    ctx.fillStyle = s.e.hit > 0 ? "#fff0c8" : "#7a1c14";
-    for (let x = left; x < right; x++) {
-      const ray = Math.floor((x / w) * rays);
-      if (ray < 0 || ray >= rays || s.dist >= zbuf[ray] - 0.08) continue;
-      const t = (x - cx) / (size * 0.28);
-      const hh = Math.sqrt(Math.max(0, 1 - t * t)) * size * 0.32;
-      ctx.fillRect(x, sy + size * 0.35 - hh, 1, hh * 2);
-    }
-    const mid = Math.floor((cx / w) * rays);
-    if (mid >= 0 && mid < rays && s.dist < zbuf[mid] - 0.08) {
-      ctx.fillStyle = "#f2d38a";
-      ctx.beginPath();
-      ctx.arc(cx - size * 0.08, sy + size * 0.28, size * 0.05, 0, Math.PI * 2);
-      ctx.arc(cx + size * 0.08, sy + size * 0.28, size * 0.05, 0, Math.PI * 2);
-      ctx.fill();
-    }
-  }
-
-  drawWeapon(w, h);
-
-  ctx.fillStyle = "#f0c400";
-  ctx.fillRect(w / 2 - 1, h / 2 - 8, 2, 16);
-  ctx.fillRect(w / 2 - 8, h / 2 - 1, 16, 2);
-  if (hurt > 0) {
-    ctx.fillStyle = `rgba(180,20,10,${hurt})`;
-    ctx.fillRect(0, 0, w, h);
-  }
-  if (iframes > 0 && phase === "play") {
-    ctx.fillStyle = `rgba(255,255,255,${0.1 * Math.abs(Math.sin(iframes * 28))})`;
-    ctx.fillRect(0, 0, w, h);
-  }
-}
-
-function drawWeapon(w, h) {
-  if (phase !== "play") return;
-  ctx.save();
-  const showStick = weapon === "stick" || swing > 0;
-  if (showStick) {
-    const t = swing > 0 ? 1 - swing / SWING_T : 0;
-    const lift = swing > 0 ? Math.sin(t * Math.PI) * h * 0.08 : 0;
-    ctx.translate(w * 0.7, h * 1.02 - lift);
-    ctx.rotate(swing > 0 ? -1.15 + t * 1.85 : -0.42);
-    ctx.fillStyle = "#4a2a12";
-    ctx.fillRect(-8, -h * 0.5, 16, h * 0.52);
-    ctx.fillStyle = "#7a4a22";
-    ctx.fillRect(-6, -h * 0.48, 12, h * 0.48);
-    ctx.fillStyle = "#2a1608";
-    ctx.fillRect(-11, -h * 0.54, 22, 18);
-    ctx.fillStyle = "#c8a060";
-    ctx.fillRect(-11, -h * 0.54, 22, 5);
-  } else {
-    const kick = cooldown > 0 ? 10 : 0;
-    ctx.translate(w * 0.62, h * 0.98 + kick);
-    ctx.fillStyle = "#1a140e";
-    ctx.fillRect(-22, -h * 0.1, 28, 48);
-    ctx.fillStyle = "#2c2418";
-    ctx.fillRect(-6, -h * 0.2, 78, 32);
-    ctx.fillStyle = "#3a3224";
-    ctx.fillRect(48, -h * 0.24, 54, 18);
-    ctx.fillStyle = "#111";
-    ctx.fillRect(96, -h * 0.22, 14, 10);
-    if (cooldown > 0.08) {
-      ctx.fillStyle = "#ffd86a";
-      ctx.fillRect(108, -h * 0.24, 22, 12);
-    }
-  }
-  ctx.restore();
+  presenter.present(ctx, canvas.width, canvas.height);
 }
 
 function resize() {
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
   canvas.width = Math.floor(canvas.clientWidth * dpr);
   canvas.height = Math.floor(canvas.clientHeight * dpr);
+  const aspect = canvas.width / Math.max(1, canvas.height);
+  const internalHeight = Math.max(120, Math.round(INTERNAL_WIDTH / aspect));
+  if (
+    !presenter ||
+    presenter.width !== INTERNAL_WIDTH ||
+    presenter.height !== internalHeight
+  ) {
+    presenter = createPresenter(INTERNAL_WIDTH, internalHeight);
+    zbuf = new Float32Array(INTERNAL_WIDTH);
+  }
 }
 
 function loop(now) {
