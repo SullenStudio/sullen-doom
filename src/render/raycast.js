@@ -9,6 +9,8 @@
  * `dir + plane * cameraX`. Walls, floors and sprites all share this frame,
  * which is what keeps them aligned with each other.
  */
+const MIN_DIST = 0.01;
+
 export function makeCamera(x, y, angle, fov) {
   const dirX = Math.cos(angle);
   const dirY = Math.sin(angle);
@@ -59,7 +61,7 @@ export function castColumn(map, camera, cameraX, maxDist = 32) {
   // Standing inside a wall would otherwise let the ray escape the level.
   if (map.isSolid(mapX, mapY)) {
     return {
-      hit: true, dist: 0.01, side: 0, texU: 0, mapX, mapY, rayDirX, rayDirY,
+      hit: true, dist: MIN_DIST, side: 0, texU: 0, mapX, mapY, rayDirX, rayDirY,
     };
   }
 
@@ -90,9 +92,13 @@ export function castColumn(map, camera, cameraX, maxDist = 32) {
     };
   }
 
-  const dist = side === 0
+  // maxDist is a search limit, not a hard bound on the returned distance.
+  // The returned distance could theoretically exceed it if cast() never found
+  // a solid cell.
+  let dist = side === 0
     ? (mapX - camera.x + (1 - stepX) / 2) / rayDirX
     : (mapY - camera.y + (1 - stepY) / 2) / rayDirY;
+  dist = Math.max(dist, MIN_DIST);
 
   let texU = side === 0
     ? camera.y + dist * rayDirY

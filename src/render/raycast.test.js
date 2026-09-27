@@ -91,6 +91,33 @@ describe("castColumn", () => {
     expect(right.texU).toBeGreaterThan(left.texU);
   });
 
+  it("walks the texture coordinate monotonically facing Math.PI", () => {
+    const cam = makeCamera(2.5, 2.5, Math.PI, FOV);
+    const left = castColumn(map, cam, -0.4, 32);
+    const right = castColumn(map, cam, 0.4, 32);
+    expect(left.mapX).toBe(0);
+    expect(right.mapX).toBe(0);
+    expect(right.texU).toBeGreaterThan(left.texU);
+  });
+
+  it("walks the texture coordinate monotonically facing Math.PI / 2", () => {
+    const cam = makeCamera(2.5, 2.5, Math.PI / 2, FOV);
+    const left = castColumn(map, cam, -0.4, 32);
+    const right = castColumn(map, cam, 0.4, 32);
+    expect(left.mapY).toBe(4);
+    expect(right.mapY).toBe(4);
+    expect(right.texU).toBeGreaterThan(left.texU);
+  });
+
+  it("walks the texture coordinate monotonically facing -Math.PI / 2", () => {
+    const cam = makeCamera(2.5, 2.5, -Math.PI / 2, FOV);
+    const left = castColumn(map, cam, -0.4, 32);
+    const right = castColumn(map, cam, 0.4, 32);
+    expect(left.mapY).toBe(0);
+    expect(right.mapY).toBe(0);
+    expect(right.texU).toBeGreaterThan(left.texU);
+  });
+
   it("reports a miss when the wall is beyond maxDist", () => {
     const cam = makeCamera(2.5, 2.5, 0, FOV);
     const hit = castColumn(map, cam, 0, 0.5);
@@ -101,5 +128,37 @@ describe("castColumn", () => {
     const cam = makeCamera(0.5, 0.5, 0.3, FOV);
     const hit = castColumn(map, cam, 0, 32);
     expect(hit.hit).toBe(true);
+    expect(hit.dist).toBeGreaterThan(0);
+    expect(hit.mapX).toBe(0);
+    expect(hit.mapY).toBe(0);
+  });
+
+  it("ensures dist is at least MIN_DIST when camera is flush against a wall", () => {
+    // Camera flush against wall at x=1
+    const cam1 = makeCamera(1.0, 2.5, Math.PI, FOV);
+    const hit1 = castColumn(map, cam1, 0, 32);
+    expect(hit1.dist).toBeGreaterThanOrEqual(0.01);
+
+    // Camera flush against wall at y=1
+    const cam2 = makeCamera(2.5, 1.0, -Math.PI / 2, FOV);
+    const hit2 = castColumn(map, cam2, 0, 32);
+    expect(hit2.dist).toBeGreaterThanOrEqual(0.01);
+  });
+
+  it("traces a diagonal ray with interleaved steps", () => {
+    // Diagonal ray from non-half coordinate should exercise both x and y steps.
+    // Camera at (2.3, 3.1) facing 0.7 radians.
+    const cam = makeCamera(2.3, 3.1, 0.7, FOV);
+    const hit = castColumn(map, cam, 0, 32);
+    // Ray should hit the wall at y=4 first.
+    expect(hit.hit).toBe(true);
+    expect(hit.mapY).toBe(4);
+    // Distance computed by hand:
+    // dirX = cos(0.7) ≈ 0.7648, dirY = sin(0.7) ≈ 0.6442
+    // planeX = -0.6442 * tan(π/6) ≈ -0.372, planeY = 0.7648 * tan(π/6) ≈ 0.442
+    // rayDir = (0.7648, 0.6442), cameraX = 0
+    // DDA steps: x from 2→3 at sideDistX≈0.915, then y from 3→4 at sideDistY≈1.397
+    // Hits solid at (3, 4), side=1, dist = (4 - 3.1 + 0) / 0.6442 ≈ 1.397
+    expect(hit.dist).toBeCloseTo(1.397, 2);
   });
 });
