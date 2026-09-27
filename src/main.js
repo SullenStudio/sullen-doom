@@ -3,10 +3,11 @@ import { TEXTURE_SLOT, generateTextures, makeEnemySprite } from "./assets/textur
 import { parseMap } from "./game/map.js";
 import { renderFloorCeiling } from "./render/floors.js";
 import { createPresenter } from "./render/framebuffer.js";
-import { PALETTE, PALETTE_SIZE, SHADE_LEVELS, buildShadeTable } from "./render/palette.js";
+import { PALETTE, PALETTE_SIZE, SHADE_LEVELS, buildShadeTable, rgb } from "./render/palette.js";
 import { makeCamera } from "./render/raycast.js";
 import { renderSprites } from "./render/sprites.js";
 import { renderWalls } from "./render/walls.js";
+import { renderCrosshair, renderFlash, renderWeapon } from "./render/weaponview.js";
 
 const MAP_LINES = [
   "################",
@@ -182,6 +183,7 @@ function shoot() {
     return;
   }
   mag -= 1;
+  lightBoost = 0.35;
   cooldown = 0.16;
   const best = nearestFoe(8, 0.35);
   if (best) {
@@ -229,6 +231,7 @@ function analog() {
 function update(dt) {
   if (phase !== "play") return;
   cooldown = Math.max(0, cooldown - dt);
+  lightBoost = Math.max(0, lightBoost - dt * 4);
   hurt = Math.max(0, hurt - dt);
   iframes = Math.max(0, iframes - dt);
   swing = Math.max(0, swing - dt);
@@ -334,6 +337,19 @@ function draw() {
       scale: 0.7,
     },
   );
+
+  if (phase === "play") {
+    renderWeapon(
+      fb,
+      { weapon, cooldown, swing, swingTime: SWING_T },
+      { shadeTable, paletteSize: PALETTE_SIZE },
+    );
+    renderCrosshair(fb, shadeTable, PALETTE_SIZE);
+  }
+  if (hurt > 0) renderFlash(fb, rgb(180, 20, 10), hurt);
+  if (iframes > 0 && phase === "play") {
+    renderFlash(fb, rgb(255, 255, 255), 0.1 * Math.abs(Math.sin(iframes * 28)));
+  }
 
   presenter.present(ctx, canvas.width, canvas.height);
 }
