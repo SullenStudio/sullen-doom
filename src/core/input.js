@@ -88,12 +88,12 @@ export function createInput(canvas, config) {
     if (e.code === "KeyR") onReload();
     if (e.code === "KeyQ" || e.code === "KeyE") onSwap();
     if (e.code === "KeyF") onMelee();
-    // Deliberately generic: any Digit<N> key parses into a 1-based slot
-    // number, with no notion of how many weapons exist. main.js decides
-    // which slots are valid, so this module needs no change as the weapon
-    // roster grows.
-    const digit = /^Digit(\d)$/.exec(e.code);
-    if (digit) onSelectWeapon(Number(digit[1]));
+    // Digit1..Digit9 select a weapon directly. Which numbers are valid is the
+    // caller's business, not this module's.
+    if (e.code.startsWith("Digit")) {
+      const slot = Number(e.code.slice(5));
+      if (slot >= 1) onSelectWeapon(slot);
+    }
     if (e.code === "Space") {
       e.preventDefault();
       if (isPlaying()) onAttack();

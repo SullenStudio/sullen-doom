@@ -157,14 +157,14 @@ function swapWeapon() {
 }
 
 // input.js only knows key codes, not the weapon roster, so it hands over a
-// raw 1-based slot number. Unknown slots (anything but the two weapons this
-// phase has) are ignored rather than erroring.
+// raw 1-based slot number; unknown slots (anything but the two weapons this
+// phase has) are ignored. No phase guard: `weapon` is fully reset to "gun"
+// by reset() at the start of every play session, so a stray press on the
+// menu or death screen leaves nothing to clean up.
 function selectWeapon(slot) {
-  if (phase !== "play") return;
   if (slot === 1) weapon = "gun";
   else if (slot === 2) weapon = "stick";
   else return;
-  firing = false;
   syncHud();
 }
 
