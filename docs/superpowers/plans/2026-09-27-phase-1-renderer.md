@@ -1254,8 +1254,13 @@ export function castColumn(map, camera, cameraX, maxDist = 32) {
     : camera.x + dist * rayDirX;
   texU -= Math.floor(texU);
   // Mirror two of the four facings so texture U always grows left to right
-  // as seen by the player.
-  if ((side === 0 && rayDirX > 0) || (side === 1 && rayDirY < 0)) {
+  // as seen by the player, instead of flipping when you walk around a wall.
+  //
+  // Which two depends on the handedness of the camera plane. This game's
+  // plane is (-dirY, dirX); published raycaster references commonly use the
+  // opposite sign, (dirY, -dirX), and their mirroring condition is therefore
+  // the inverse of this one. Copying theirs verbatim reverses every texture.
+  if ((side === 0 && rayDirX < 0) || (side === 1 && rayDirY > 0)) {
     texU = 1 - texU;
   }
   if (texU >= 1) texU = 0.999999;
