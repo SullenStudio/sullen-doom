@@ -38,7 +38,7 @@ const LOOK_PHONE = 0.028;
 const LOOK_DESK = 0.0045;
 // Thumb travel in px to reach full walk. Smaller = snappier.
 const STICK_PX = 28;
-const BEST_KEY = "sullen-doom-best";
+const BEST_KEY = "sullen-descent-best";
 
 const phone =
   window.matchMedia("(pointer: coarse)").matches ||

@@ -1,16 +1,16 @@
-# Sullen Doom — Sullen Studio
+# SULLEN DESCENT — Sullen Studio
 
-A cramped corridor shooter in the spirit of early Doom. First-person
-raycaster, demons in the dark, no external assets.
+A cramped corridor shooter. First-person raycaster, procedural art,
+no external assets.
 
-**Play:** https://sullenstudio.github.io/sullen-doom/
+**Play:** https://sullenstudio.github.io/sullen-descent/
 
 ## Controls
 
 | Input | Action |
 | --- | --- |
 | WASD / arrows | move |
-| mouse drag | look |
+| mouse | look |
 | click / space | fire |
 | Phone | left stick + FIRE, drag the view to look |
 
