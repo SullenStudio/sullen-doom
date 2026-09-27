@@ -20,3 +20,16 @@ Best kill count is stored in `localStorage`.
 npm install
 npm run dev
 ```
+
+## Development
+
+```bash
+npm install
+npm run dev      # dev server
+npm test         # unit tests
+npm run build    # production build into dist/
+```
+
+The renderer draws into a 480-pixel-wide buffer and scales it up, so the
+game looks the same on every display. All art is generated from a seed at
+startup; there are no asset files.

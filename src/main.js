@@ -1,7 +1,9 @@
 import "./style.css";
 import { TEXTURE_SLOT, generateTextures, makeEnemySprite } from "./assets/textures.js";
 import { createInput, readMoveAxes } from "./core/input.js";
+import { createLoop } from "./core/loop.js";
 import { parseMap } from "./game/map.js";
+import { createGameState, createHudBinding } from "./game/state.js";
 import { renderFloorCeiling } from "./render/floors.js";
 import { createPresenter } from "./render/framebuffer.js";
 import { PALETTE, PALETTE_SIZE, SHADE_LEVELS, buildShadeTable, rgb } from "./render/palette.js";
@@ -35,7 +37,6 @@ const FOV = Math.PI / 3;
 const MAG_SIZE = 8;
 const RELOAD_T = 0.85;
 const MOVE = 3.4;
-const TURN = 2.4;
 const ENEMY_SPEED = 0.85;
 const BITE = 10;
 const IFRAMES = 0.65;
@@ -63,9 +64,20 @@ const hpEl = document.getElementById("hp");
 const ammoEl = document.getElementById("ammo");
 const killEl = document.getElementById("kills");
 
+// Captured once at load so reset() can restore the menu after die() has
+// overwritten it, without hard-coding wording that lives in index.html.
+const overlayTitle = overlay.querySelector("h1");
+const overlaySub = overlay.querySelector("p:nth-of-type(2)");
+const MENU_TITLE = overlayTitle.textContent;
+const MENU_SUB = overlaySub.textContent;
+const MENU_PLAY_LABEL = playBtn.textContent;
+
+// Set by the on-screen mobile FIRE button; kept separate from input.firing
+// because it is driven by a pointer, not the input module's own state.
 let firing = false;
-let weapon = "gun";
-let phase = "menu";
+
+const state = createGameState(parsed);
+const hud = createHudBinding({ hp: hpEl, ammo: ammoEl, kills: killEl });
 
 const input = createInput(canvas, {
   phone,
@@ -78,22 +90,9 @@ const input = createInput(canvas, {
   onRestart: () => reset(),
   onSelectWeapon: (slot) => selectWeapon(slot),
   onMelee: () => melee(),
-  isPlaying: () => phase === "play",
+  isPlaying: () => state.phase === "play",
 });
 if (phone) input.bindStickPad(document.getElementById("stick"));
-
-let player = { x: 8, y: 8, a: 0 };
-let enemies = [];
-let hp = 100;
-let mag = MAG_SIZE;
-let reserve = 40;
-let reloading = 0;
-let kills = 0;
-let cooldown = 0;
-let hurt = 0;
-let iframes = 0;
-let swing = 0;
-let last = performance.now();
 
 const INTERNAL_WIDTH = 480;
 const MAX_DIST = 32;
@@ -104,7 +103,6 @@ const enemyBitmap = makeEnemySprite(7);
 
 let presenter = null;
 let zbuf = new Float32Array(1);
-let lightBoost = 0;
 
 function blocked(ax, ay, bx, by) {
   const dx = bx - ax;
@@ -119,81 +117,80 @@ function blocked(ax, ay, bx, by) {
 }
 
 function reset() {
-  player = { ...parsed.playerStart };
-  player.a = parsed.playerStart.angle;
-  enemies = parsed.enemySpawns.map((s) => ({ x: s.x, y: s.y, hp: 2, hit: 0 }));
-  hp = 100;
-  mag = MAG_SIZE;
-  reserve = 40;
-  reloading = 0;
-  kills = 0;
-  cooldown = 0;
-  hurt = 0;
-  iframes = 0;
-  swing = 0;
-  weapon = "gun";
+  state.reset();
   firing = false;
-  phase = "play";
+  overlayTitle.textContent = MENU_TITLE;
+  overlaySub.textContent = MENU_SUB;
+  playBtn.textContent = MENU_PLAY_LABEL;
   overlay.classList.add("hidden");
   syncHud();
 }
 
 function syncHud() {
-  hpEl.textContent = `HP ${Math.max(0, Math.ceil(hp))}`;
-  if (weapon === "stick") {
-    ammoEl.textContent = swing > 0 ? "SWING" : "STICK";
-  } else {
-    ammoEl.textContent =
-      reloading > 0 ? "RELOAD" : `AMMO ${mag}/${reserve}`;
-  }
-  killEl.textContent = `KILLS ${kills}`;
+  hud.sync({
+    hp: `HP ${Math.max(0, Math.ceil(state.hp))}`,
+    ammo:
+      state.weapon === "stick"
+        ? state.swing > 0
+          ? "SWING"
+          : "STICK"
+        : state.reloading > 0
+          ? "RELOAD"
+          : `AMMO ${state.mag}/${state.reserve}`,
+    kills: `KILLS ${state.kills}`,
+  });
 }
 
 function swapWeapon() {
-  if (phase !== "play") return;
-  weapon = weapon === "gun" ? "stick" : "gun";
+  if (state.phase !== "play") return;
+  state.weapon = state.weapon === "gun" ? "stick" : "gun";
   firing = false;
   syncHud();
 }
 
 // input.js only knows key codes, not the weapon roster, so it hands over a
 // raw 1-based slot number; unknown slots (anything but the two weapons this
-// phase has) are ignored. No phase guard: `weapon` is fully reset to "gun"
-// by reset() at the start of every play session, so a stray press on the
-// menu or death screen leaves nothing to clean up.
+// phase has) are ignored. No phase guard: `state.weapon` is fully reset to
+// "gun" by state.reset() at the start of every play session, so a stray
+// press on the menu or death screen leaves nothing to clean up.
 function selectWeapon(slot) {
-  if (slot === 1) weapon = "gun";
-  else if (slot === 2) weapon = "stick";
+  if (slot === 1) state.weapon = "gun";
+  else if (slot === 2) state.weapon = "stick";
   else return;
   syncHud();
 }
 
 function tryMove(nx, ny) {
-  if (!map.isSolidAt(nx, player.y)) player.x = nx;
-  if (!map.isSolidAt(player.x, ny)) player.y = ny;
+  if (!map.isSolidAt(nx, state.player.y)) state.player.x = nx;
+  if (!map.isSolidAt(state.player.x, ny)) state.player.y = ny;
 }
 
 function startReload() {
-  if (reloading > 0 || reserve <= 0 || mag >= MAG_SIZE || phase !== "play") {
+  if (
+    state.reloading > 0 ||
+    state.reserve <= 0 ||
+    state.mag >= MAG_SIZE ||
+    state.phase !== "play"
+  ) {
     return;
   }
-  reloading = RELOAD_T;
+  state.reloading = RELOAD_T;
   syncHud();
 }
 
 function nearestFoe(maxDist, cone) {
-  const dirx = Math.cos(player.a);
-  const diry = Math.sin(player.a);
+  const dirx = Math.cos(state.player.a);
+  const diry = Math.sin(state.player.a);
   let best = null;
   let bestD = maxDist;
-  for (const e of enemies) {
+  for (const e of state.enemies) {
     if (e.hp <= 0) continue;
-    const vx = e.x - player.x;
-    const vy = e.y - player.y;
+    const vx = e.x - state.player.x;
+    const vy = e.y - state.player.y;
     const along = vx * dirx + vy * diry;
     if (along < 0.15 || along > bestD) continue;
     if (Math.abs(vx * diry - vy * dirx) > cone) continue;
-    if (blocked(player.x, player.y, e.x, e.y)) continue;
+    if (blocked(state.player.x, state.player.y, e.x, e.y)) continue;
     best = e;
     bestD = along;
   }
@@ -201,77 +198,77 @@ function nearestFoe(maxDist, cone) {
 }
 
 function shoot() {
-  if (phase !== "play" || cooldown > 0 || reloading > 0) return;
-  if (mag <= 0) {
+  if (state.phase !== "play" || state.cooldown > 0 || state.reloading > 0) return;
+  if (state.mag <= 0) {
     startReload();
     return;
   }
-  mag -= 1;
-  lightBoost = 0.35;
-  cooldown = 0.16;
+  state.mag -= 1;
+  state.lightBoost = 0.35;
+  state.cooldown = 0.16;
   const best = nearestFoe(8, 0.35);
   if (best) {
     best.hp -= 1;
     best.hit = 0.15;
-    if (best.hp <= 0) kills += 1;
+    if (best.hp <= 0) state.kills += 1;
   }
-  if (mag <= 0) startReload();
+  if (state.mag <= 0) startReload();
   syncHud();
 }
 
 function melee() {
-  if (phase !== "play" || swing > 0) return;
-  swing = SWING_T;
+  if (state.phase !== "play" || state.swing > 0) return;
+  state.swing = SWING_T;
   const best = nearestFoe(STICK_RANGE, 0.55);
   if (best) {
     best.hp -= STICK_DMG;
     best.hit = 0.2;
-    if (best.hp <= 0) kills += 1;
+    if (best.hp <= 0) state.kills += 1;
   }
   syncHud();
 }
 
 function attack() {
-  if (weapon === "stick") melee();
+  if (state.weapon === "stick") melee();
   else shoot();
 }
 
 function update(dt) {
-  if (phase !== "play") return;
-  cooldown = Math.max(0, cooldown - dt);
-  lightBoost = Math.max(0, lightBoost - dt * 4);
-  hurt = Math.max(0, hurt - dt);
-  iframes = Math.max(0, iframes - dt);
-  swing = Math.max(0, swing - dt);
-  if (reloading > 0) {
-    reloading -= dt;
-    if (reloading <= 0) {
-      const need = MAG_SIZE - mag;
-      const take = Math.min(need, reserve);
-      mag += take;
-      reserve -= take;
-      reloading = 0;
+  if (state.phase !== "play") return;
+  state.cooldown = Math.max(0, state.cooldown - dt);
+  state.lightBoost = Math.max(0, state.lightBoost - dt * 4);
+  state.hurt = Math.max(0, state.hurt - dt);
+  state.iframes = Math.max(0, state.iframes - dt);
+  state.swing = Math.max(0, state.swing - dt);
+  if (state.reloading > 0) {
+    state.reloading -= dt;
+    if (state.reloading <= 0) {
+      const need = MAG_SIZE - state.mag;
+      const take = Math.min(need, state.reserve);
+      state.mag += take;
+      state.reserve -= take;
+      state.reloading = 0;
     }
   }
 
-  player.a += input.consumeLook();
+  state.player.a += input.consumeLook();
   const move = readMoveAxes(input.keys, input.stick);
   const speed = MOVE;
-  const fx = Math.cos(player.a);
-  const fy = Math.sin(player.a);
+  const fx = Math.cos(state.player.a);
+  const fy = Math.sin(state.player.a);
   const rx = -fy;
   const ry = fx;
   tryMove(
-    player.x + (fx * move.y + rx * move.x) * speed * dt,
-    player.y + (fy * move.y + ry * move.x) * speed * dt,
+    state.player.x + (fx * move.y + rx * move.x) * speed * dt,
+    state.player.y + (fy * move.y + ry * move.x) * speed * dt,
   );
   if (input.firing || firing) attack();
 
-  for (const e of enemies) {
+  for (const e of state.enemies) {
     if (e.hp <= 0) continue;
     e.hit = Math.max(0, e.hit - dt);
-    const dx = player.x - e.x;
-    const dy = player.y - e.y;
+    const dx = state.player.x - e.x;
+    const dy = state.player.y - e.y;
     const dist = Math.hypot(dx, dy);
     if (dist > 0.55) {
       tryEnemyMove(
@@ -279,11 +276,11 @@ function update(dt) {
         e.x + (dx / dist) * ENEMY_SPEED * dt,
         e.y + (dy / dist) * ENEMY_SPEED * dt,
       );
-    } else if (iframes <= 0) {
-      hp -= BITE;
-      iframes = IFRAMES;
-      hurt = 0.35;
-      if (hp <= 0) die();
+    } else if (state.iframes <= 0) {
+      state.hp -= BITE;
+      state.iframes = IFRAMES;
+      state.hurt = 0.35;
+      if (state.hp <= 0) die();
     }
   }
   syncHud();
@@ -295,13 +292,12 @@ function tryEnemyMove(e, nx, ny) {
 }
 
 function die() {
-  phase = "over";
-  const best = Math.max(kills, Number(localStorage.getItem(BEST_KEY) || 0));
+  state.phase = "over";
+  const best = Math.max(state.kills, Number(localStorage.getItem(BEST_KEY) || 0));
   localStorage.setItem(BEST_KEY, String(best));
   overlay.classList.remove("hidden");
-  overlay.querySelector("h1").textContent = "YOU DIED";
-  overlay.querySelector("p:nth-of-type(2)").textContent =
-    `kills ${kills}   best ${best}`;
+  overlayTitle.textContent = "YOU DIED";
+  overlaySub.textContent = `kills ${state.kills}   best ${best}`;
   playBtn.textContent = "AGAIN";
   if (document.pointerLockElement) document.exitPointerLock();
 }
@@ -309,7 +305,7 @@ function die() {
 function draw() {
   if (!presenter) return;
   const fb = presenter.fb;
-  const camera = makeCamera(player.x, player.y, player.a, FOV);
+  const camera = makeCamera(state.player.x, state.player.y, state.player.a, FOV);
   const horizon = fb.height >> 1;
 
   renderFloorCeiling(
@@ -317,7 +313,7 @@ function draw() {
     camera,
     textures[TEXTURE_SLOT.floor],
     textures[TEXTURE_SLOT.ceiling],
-    { shadeTable, paletteSize: PALETTE_SIZE, lightBoost, horizon },
+    { shadeTable, paletteSize: PALETTE_SIZE, lightBoost: state.lightBoost, horizon },
   );
 
   renderWalls(fb, map, camera, textures, {
@@ -325,14 +321,14 @@ function draw() {
     paletteSize: PALETTE_SIZE,
     zbuf,
     maxDist: MAX_DIST,
-    lightBoost,
+    lightBoost: state.lightBoost,
     horizon,
   });
 
   renderSprites(
     fb,
     camera,
-    enemies.filter((e) => e.hp > 0).map((e) => ({
+    state.enemies.filter((e) => e.hp > 0).map((e) => ({
       x: e.x,
       y: e.y,
       hit: e.hit,
@@ -342,23 +338,23 @@ function draw() {
       shadeTable,
       paletteSize: PALETTE_SIZE,
       zbuf,
-      lightBoost,
+      lightBoost: state.lightBoost,
       horizon,
       scale: 0.7,
     },
   );
 
-  if (phase === "play") {
+  if (state.phase === "play") {
     renderWeapon(
       fb,
-      { weapon, cooldown, swing, swingTime: SWING_T },
+      { weapon: state.weapon, cooldown: state.cooldown, swing: state.swing, swingTime: SWING_T },
       { shadeTable, paletteSize: PALETTE_SIZE },
     );
     renderCrosshair(fb, shadeTable, PALETTE_SIZE);
   }
-  if (hurt > 0) renderFlash(fb, rgb(180, 20, 10), hurt);
-  if (iframes > 0 && phase === "play") {
-    renderFlash(fb, rgb(255, 255, 255), 0.1 * Math.abs(Math.sin(iframes * 28)));
+  if (state.hurt > 0) renderFlash(fb, rgb(180, 20, 10), state.hurt);
+  if (state.iframes > 0 && state.phase === "play") {
+    renderFlash(fb, rgb(255, 255, 255), 0.1 * Math.abs(Math.sin(state.iframes * 28)));
   }
 
   presenter.present(ctx, canvas.width, canvas.height);
@@ -387,14 +383,6 @@ function resize() {
   }
 }
 
-function loop(now) {
-  const dt = Math.min(0.05, (now - last) / 1000);
-  last = now;
-  update(dt);
-  draw();
-  requestAnimationFrame(loop);
-}
-
 playBtn.addEventListener("click", () => reset());
 
 document.getElementById("btn-swap").addEventListener("pointerdown", (e) => {
@@ -417,4 +405,4 @@ document.getElementById("btn-fire").addEventListener("pointercancel", () => {
 
 resize();
 window.addEventListener("resize", resize);
-requestAnimationFrame(loop);
+createLoop({ update, render: draw }).start();
