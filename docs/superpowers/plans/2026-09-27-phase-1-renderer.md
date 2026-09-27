@@ -1896,8 +1896,15 @@ function resize() {
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
   canvas.width = Math.floor(canvas.clientWidth * dpr);
   canvas.height = Math.floor(canvas.clientHeight * dpr);
-  const aspect = canvas.width / Math.max(1, canvas.height);
-  const internalHeight = Math.max(120, Math.round(INTERNAL_WIDTH / aspect));
+  // A canvas can measure zero while the layout settles or while an ancestor
+  // is hidden. Dividing by that aspect ratio would ask for a buffer of
+  // infinite height, which throws. Wait for a real size instead.
+  if (canvas.width < 1 || canvas.height < 1) return;
+  const aspect = canvas.width / canvas.height;
+  const internalHeight = Math.min(
+    720,
+    Math.max(120, Math.round(INTERNAL_WIDTH / aspect)),
+  );
   if (
     !presenter ||
     presenter.width !== INTERNAL_WIDTH ||
