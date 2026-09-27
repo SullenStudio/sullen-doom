@@ -21,11 +21,14 @@ const MAP = [
 
 const COLS = MAP[0].length;
 const ROWS = MAP.length;
-const CELL = 1;
 const FOV = Math.PI / 3;
-const MOVE = 2.6;
+const MAG_SIZE = 8;
+const RELOAD_T = 0.85;
+const MOVE = 2.8;
+const MOVE_PHONE = 5.2;
 const TURN = 2.4;
 const ENEMY_SPEED = 0.85;
+const LOOK_PHONE = 0.0075;
 const BEST_KEY = "sullen-doom-best";
 
 const phone =
@@ -43,25 +46,40 @@ const ammoEl = document.getElementById("ammo");
 const killEl = document.getElementById("kills");
 
 const keys = new Set();
-const look = { dx: 0 };
-const stick = { x: 0, y: 0, active: false };
+const stick = { x: 0, y: 0 };
+const pointers = new Map();
 let firing = false;
 let phase = "menu";
 
 let player = { x: 8, y: 8, a: 0 };
 let enemies = [];
 let hp = 100;
-let ammo = 40;
+let mag = MAG_SIZE;
+let reserve = 40;
+let reloading = 0;
 let kills = 0;
 let cooldown = 0;
 let hurt = 0;
 let last = performance.now();
+let zbuf = new Float32Array(1);
 
 function wall(x, y) {
   const cx = Math.floor(x);
   const cy = Math.floor(y);
   if (cx < 0 || cy < 0 || cx >= COLS || cy >= ROWS) return true;
   return MAP[cy][cx] === "#";
+}
+
+function blocked(ax, ay, bx, by) {
+  const dx = bx - ax;
+  const dy = by - ay;
+  const dist = Math.hypot(dx, dy);
+  const steps = Math.max(2, Math.ceil(dist / 0.08));
+  for (let i = 1; i < steps; i++) {
+    const t = i / steps;
+    if (wall(ax + dx * t, ay + dy * t)) return true;
+  }
+  return false;
 }
 
 function reset() {
@@ -75,7 +93,9 @@ function reset() {
     }
   }
   hp = 100;
-  ammo = 40;
+  mag = MAG_SIZE;
+  reserve = 40;
+  reloading = 0;
   kills = 0;
   cooldown = 0;
   hurt = 0;
@@ -86,7 +106,8 @@ function reset() {
 
 function syncHud() {
   hpEl.textContent = `HP ${Math.max(0, Math.ceil(hp))}`;
-  ammoEl.textContent = `AMMO ${ammo}`;
+  ammoEl.textContent =
+    reloading > 0 ? "RELOAD" : `AMMO ${mag}/${reserve}`;
   killEl.textContent = `KILLS ${kills}`;
 }
 
@@ -95,10 +116,22 @@ function tryMove(nx, ny) {
   if (!wall(player.x, ny)) player.y = ny;
 }
 
+function startReload() {
+  if (reloading > 0 || reserve <= 0 || mag >= MAG_SIZE || phase !== "play") {
+    return;
+  }
+  reloading = RELOAD_T;
+  syncHud();
+}
+
 function shoot() {
-  if (phase !== "play" || cooldown > 0 || ammo <= 0) return;
-  ammo -= 1;
-  cooldown = 0.18;
+  if (phase !== "play" || cooldown > 0 || reloading > 0) return;
+  if (mag <= 0) {
+    startReload();
+    return;
+  }
+  mag -= 1;
+  cooldown = 0.16;
   const dirx = Math.cos(player.a);
   const diry = Math.sin(player.a);
   let best = null;
@@ -107,11 +140,11 @@ function shoot() {
     if (e.hp <= 0) continue;
     const vx = e.x - player.x;
     const vy = e.y - player.y;
-    const d = Math.hypot(vx, vy);
     const along = vx * dirx + vy * diry;
     if (along < 0.2 || along > bestD) continue;
     const cross = Math.abs(vx * diry - vy * dirx);
     if (cross > 0.35) continue;
+    if (blocked(player.x, player.y, e.x, e.y)) continue;
     best = e;
     bestD = along;
   }
@@ -120,14 +153,11 @@ function shoot() {
     best.hit = 0.15;
     if (best.hp <= 0) kills += 1;
   }
+  if (mag <= 0) startReload();
   syncHud();
 }
 
-function update(dt) {
-  if (phase !== "play") return;
-  cooldown = Math.max(0, cooldown - dt);
-  hurt = Math.max(0, hurt - dt);
-
+function analog() {
   let mx = 0;
   let my = 0;
   if (keys.has("KeyW") || keys.has("ArrowUp")) my += 1;
@@ -136,17 +166,38 @@ function update(dt) {
   if (keys.has("KeyD") || keys.has("ArrowRight")) mx += 1;
   mx += stick.x;
   my += -stick.y;
-  const len = Math.hypot(mx, my) || 1;
+  const raw = Math.hypot(mx, my);
+  if (raw < 0.12) return { x: 0, y: 0 };
+  const mag = Math.min(1, (raw - 0.08) / 0.92);
+  const boost = phone ? 0.7 + 0.3 * mag : mag;
+  return { x: (mx / raw) * boost, y: (my / raw) * boost };
+}
+
+function update(dt) {
+  if (phase !== "play") return;
+  cooldown = Math.max(0, cooldown - dt);
+  hurt = Math.max(0, hurt - dt);
+  if (reloading > 0) {
+    reloading -= dt;
+    if (reloading <= 0) {
+      const need = MAG_SIZE - mag;
+      const take = Math.min(need, reserve);
+      mag += take;
+      reserve -= take;
+      reloading = 0;
+    }
+  }
+
+  const move = analog();
+  const speed = phone ? MOVE_PHONE : MOVE;
   const fx = Math.cos(player.a);
   const fy = Math.sin(player.a);
   const rx = -fy;
   const ry = fx;
   tryMove(
-    player.x + ((fx * my + rx * mx) / len) * MOVE * dt,
-    player.y + ((fy * my + ry * mx) / len) * MOVE * dt,
+    player.x + (fx * move.y + rx * move.x) * speed * dt,
+    player.y + (fy * move.y + ry * move.x) * speed * dt,
   );
-  player.a += look.dx * TURN * dt;
-  look.dx *= 0.4;
   if (firing) shoot();
 
   for (const e of enemies) {
@@ -156,7 +207,11 @@ function update(dt) {
     const dy = player.y - e.y;
     const dist = Math.hypot(dx, dy);
     if (dist > 0.55) {
-      tryEnemyMove(e, e.x + (dx / dist) * ENEMY_SPEED * dt, e.y + (dy / dist) * ENEMY_SPEED * dt);
+      tryEnemyMove(
+        e,
+        e.x + (dx / dist) * ENEMY_SPEED * dt,
+        e.y + (dy / dist) * ENEMY_SPEED * dt,
+      );
     } else {
       hp -= 18 * dt;
       hurt = 0.2;
@@ -212,11 +267,15 @@ function draw() {
   ctx.fillStyle = "#1a0c08";
   ctx.fillRect(0, h / 2, w, h / 2);
 
-  const rays = Math.floor(w / 2);
+  const rays = Math.max(80, Math.floor(w / 2));
+  if (zbuf.length !== rays) zbuf = new Float32Array(rays);
+  zbuf.fill(99);
+
   for (let i = 0; i < rays; i++) {
     const a = player.a - FOV / 2 + (i / rays) * FOV;
     const { dist, hit, side } = cast(a);
     if (!hit) continue;
+    zbuf[i] = dist;
     const colH = Math.min(h, (h * 0.85) / Math.max(0.12, dist));
     const shade = Math.max(28, 190 - dist * 22 - (side ? 30 : 0));
     ctx.fillStyle = `rgb(${shade + 40},${shade * 0.28},${shade * 0.18})`;
@@ -224,7 +283,7 @@ function draw() {
   }
 
   const sprites = enemies
-    .filter((e) => e.hp > 0)
+    .filter((e) => e.hp > 0 && !blocked(player.x, player.y, e.x, e.y))
     .map((e) => {
       const dx = e.x - player.x;
       const dy = e.y - player.y;
@@ -238,17 +297,26 @@ function draw() {
     while (ang < -Math.PI) ang += Math.PI * 2;
     if (Math.abs(ang) > FOV) continue;
     const size = Math.min(h, (h * 0.7) / Math.max(0.2, s.dist));
-    const sx = w / 2 + (ang / (FOV / 2)) * (w / 2) - size / 2;
+    const cx = w / 2 + (ang / (FOV / 2)) * (w / 2);
     const sy = h / 2 - size * 0.15;
+    const left = Math.floor(cx - size * 0.28);
+    const right = Math.ceil(cx + size * 0.28);
     ctx.fillStyle = s.e.hit > 0 ? "#fff0c8" : "#7a1c14";
-    ctx.beginPath();
-    ctx.ellipse(sx + size / 2, sy + size * 0.35, size * 0.28, size * 0.32, 0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = "#f2d38a";
-    ctx.beginPath();
-    ctx.arc(sx + size * 0.38, sy + size * 0.28, size * 0.05, 0, Math.PI * 2);
-    ctx.arc(sx + size * 0.62, sy + size * 0.28, size * 0.05, 0, Math.PI * 2);
-    ctx.fill();
+    for (let x = left; x < right; x++) {
+      const ray = Math.floor((x / w) * rays);
+      if (ray < 0 || ray >= rays || s.dist >= zbuf[ray] - 0.08) continue;
+      const t = (x - cx) / (size * 0.28);
+      const hh = Math.sqrt(Math.max(0, 1 - t * t)) * size * 0.32;
+      ctx.fillRect(x, sy + size * 0.35 - hh, 1, hh * 2);
+    }
+    const mid = Math.floor((cx / w) * rays);
+    if (mid >= 0 && mid < rays && s.dist < zbuf[mid] - 0.08) {
+      ctx.fillStyle = "#f2d38a";
+      ctx.beginPath();
+      ctx.arc(cx - size * 0.08, sy + size * 0.28, size * 0.05, 0, Math.PI * 2);
+      ctx.arc(cx + size * 0.08, sy + size * 0.28, size * 0.05, 0, Math.PI * 2);
+      ctx.fill();
+    }
   }
 
   ctx.fillStyle = "#f0c400";
@@ -274,8 +342,18 @@ function loop(now) {
   requestAnimationFrame(loop);
 }
 
+function setStickFromPoint(clientX, clientY, origin) {
+  const dx = (clientX - origin.x) / 52;
+  const dy = (clientY - origin.y) / 52;
+  const l = Math.hypot(dx, dy) || 1;
+  const cap = Math.min(1.15, l);
+  stick.x = (dx / l) * cap;
+  stick.y = (dy / l) * cap;
+}
+
 window.addEventListener("keydown", (e) => {
   keys.add(e.code);
+  if (e.code === "KeyR") startReload();
   if (e.code === "Space") {
     e.preventDefault();
     if (phase === "play") shoot();
@@ -287,39 +365,59 @@ window.addEventListener("keyup", (e) => keys.delete(e.code));
 canvas.addEventListener("pointerdown", (e) => {
   if (phase !== "play") return;
   canvas.setPointerCapture(e.pointerId);
-  look._x = e.clientX;
+  const left = e.clientX < window.innerWidth * 0.42;
+  if (phone && left) {
+    pointers.set(e.pointerId, { kind: "move", x: e.clientX, y: e.clientY });
+    setStickFromPoint(e.clientX, e.clientY, { x: e.clientX, y: e.clientY });
+    return;
+  }
+  pointers.set(e.pointerId, { kind: "look", x: e.clientX, y: e.clientY });
   if (!phone) shoot();
 });
 canvas.addEventListener("pointermove", (e) => {
-  if (look._x == null) return;
-  look.dx += (e.clientX - look._x) * 0.012;
-  look._x = e.clientX;
+  const p = pointers.get(e.pointerId);
+  if (!p) return;
+  if (p.kind === "look") {
+    const sens = phone ? LOOK_PHONE : 0.0045;
+    player.a += (e.clientX - p.x) * sens;
+    p.x = e.clientX;
+    p.y = e.clientY;
+    return;
+  }
+  setStickFromPoint(e.clientX, e.clientY, p);
 });
-canvas.addEventListener("pointerup", () => {
-  look._x = null;
-});
+function endPointer(e) {
+  const p = pointers.get(e.pointerId);
+  pointers.delete(e.pointerId);
+  if (p?.kind === "move") {
+    stick.x = 0;
+    stick.y = 0;
+  }
+}
+canvas.addEventListener("pointerup", endPointer);
+canvas.addEventListener("pointercancel", endPointer);
 
 playBtn.addEventListener("click", () => reset());
 
 const stickEl = document.getElementById("stick");
-function setStick(e) {
+function setStickPad(e) {
   const r = stickEl.getBoundingClientRect();
-  stick.x = ((e.clientX - r.left) / r.width) * 2 - 1;
-  stick.y = ((e.clientY - r.top) / r.height) * 2 - 1;
-  const l = Math.hypot(stick.x, stick.y) || 1;
-  stick.x /= Math.max(1, l);
-  stick.y /= Math.max(1, l);
+  const cx = r.left + r.width / 2;
+  const cy = r.top + r.height / 2;
+  setStickFromPoint(e.clientX, e.clientY, { x: cx, y: cy });
 }
 stickEl.addEventListener("pointerdown", (e) => {
-  stick.active = true;
+  e.stopPropagation();
   stickEl.setPointerCapture(e.pointerId);
-  setStick(e);
+  pointers.set(e.pointerId, { kind: "move", x: e.clientX, y: e.clientY });
+  setStickPad(e);
 });
 stickEl.addEventListener("pointermove", (e) => {
-  if (stick.active) setStick(e);
+  if (!pointers.has(e.pointerId)) return;
+  setStickPad(e);
 });
-const clearStick = () => {
-  stick.active = false;
+const clearStick = (e) => {
+  pointers.delete(e.pointerId);
   stick.x = 0;
   stick.y = 0;
 };
@@ -328,14 +426,17 @@ stickEl.addEventListener("pointercancel", clearStick);
 
 document.getElementById("btn-fire").addEventListener("pointerdown", (e) => {
   e.preventDefault();
+  e.stopPropagation();
   firing = true;
   shoot();
 });
 document.getElementById("btn-fire").addEventListener("pointerup", () => {
   firing = false;
 });
+document.getElementById("btn-fire").addEventListener("pointercancel", () => {
+  firing = false;
+});
 
 resize();
 window.addEventListener("resize", resize);
 requestAnimationFrame(loop);
-void CELL;

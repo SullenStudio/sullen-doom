@@ -103,19 +103,19 @@ html.phone #mobile-ui {
 }
 
 #stick {
-  width: 118px;
-  height: 118px;
+  width: 132px;
+  height: 132px;
   border-radius: 50%;
-  background: rgba(40, 16, 12, 0.7);
-  border: 3px solid #7a2a18;
+  background: rgba(40, 16, 12, 0.28);
+  border: 3px solid rgba(180, 70, 48, 0.38);
 }
 
 #btn-fire {
   width: 96px;
   height: 96px;
   border-radius: 50%;
-  background: #e23b2f;
-  color: #fff4f2;
+  background: rgba(226, 59, 47, 0.4);
+  color: rgba(255, 244, 242, 0.88);
 }
 
 #btn-play:active,
