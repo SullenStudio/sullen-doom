@@ -2854,7 +2854,9 @@ git commit -m "feat: draw the weapon, crosshair and flashes in the framebuffer"
 - Consumes: ничего.
 - Produces: `readMoveAxes(keys, stick) -> { x, y }` — нормализованный вектор движения, где `y` вперёд, `x` вправо; `createInput(canvas, config) -> Input`.
 
-`config` это `{ phone, stickPx, lookDesktop, lookPhone, onAttack, onSwap, onReload, onRestart, isPlaying }`.
+`config` это `{ phone, stickPx, lookDesktop, lookPhone, onAttack, onSwap, onReload, onRestart, onSelectWeapon, onMelee, isPlaying }`.
+
+`onSelectWeapon(n)` получает номер нажатой цифровой клавиши, начиная с единицы. Обрабатывать её осмысленность — дело вызывающего: в этой фазе стволов два, во второй их станет шесть, и модуль ввода не должен об этом знать.
 `Input` это `{ keys: Set<string>, stick: {x, y}, firing: boolean, locked: boolean, consumeLook(): number, requestLock(): void, destroy(): void }`.
 
 `consumeLook()` возвращает накопленный поворот в радианах и обнуляет счётчик. Так поворот не зависит от частоты событий мыши.
@@ -2962,6 +2964,8 @@ export function createInput(canvas, config) {
     onSwap,
     onReload,
     onRestart,
+    onSelectWeapon,
+    onMelee,
     isPlaying,
   } = config;
 
@@ -3013,6 +3017,13 @@ export function createInput(canvas, config) {
     keys.add(e.code);
     if (e.code === "KeyR") onReload();
     if (e.code === "KeyQ" || e.code === "KeyE") onSwap();
+    if (e.code === "KeyF") onMelee();
+    // Digit1..Digit9 select a weapon directly. Which numbers are valid is the
+    // caller's business, not this module's.
+    if (e.code.startsWith("Digit")) {
+      const slot = Number(e.code.slice(5));
+      if (slot >= 1) onSelectWeapon(slot);
+    }
     if (e.code === "Space") {
       e.preventDefault();
       if (isPlaying()) onAttack();
@@ -3174,6 +3185,13 @@ const input = createInput(canvas, {
   onSwap: () => swapWeapon(),
   onReload: () => startReload(),
   onRestart: () => reset(),
+  onMelee: () => melee(),
+  onSelectWeapon: (slot) => {
+    if (slot === 1) weapon = "gun";
+    else if (slot === 2) weapon = "stick";
+    else return;
+    syncHud();
+  },
   isPlaying: () => phase === "play",
 });
 if (phone) input.bindStickPad(document.getElementById("stick"));
@@ -3202,7 +3220,7 @@ if (phone) input.bindStickPad(document.getElementById("stick"));
 Строка 26:
 
 ```html
-        <p class="hint">WASD move · mouse look · click fire · Q swap · R reload · Esc release cursor</p>
+        <p class="hint">WASD move · mouse look · click fire · 1/2 or Q swap · F melee · R reload · Esc frees cursor</p>
 ```
 
 - [ ] **Step 7: Проверить в браузере**
