@@ -1,0 +1,124 @@
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: #120808;
+  overflow: hidden;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  font-family: Arial, Helvetica, sans-serif;
+}
+
+#app {
+  position: relative;
+  height: 100dvh;
+  background: #120808;
+}
+
+#view {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+#hud {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(12px + env(safe-area-inset-bottom));
+  display: flex;
+  justify-content: space-between;
+  padding: 0 18px;
+  color: #f0c400;
+  font: 800 16px/1 Arial, sans-serif;
+  letter-spacing: 0.08em;
+  text-shadow: 0 2px 0 #3a1600;
+  pointer-events: none;
+}
+
+html.phone #hud {
+  bottom: calc(118px + env(safe-area-inset-bottom));
+}
+
+#overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: rgba(10, 4, 4, 0.78);
+  color: #f4e4c8;
+  text-align: center;
+}
+
+#overlay.hidden {
+  display: none;
+}
+
+#overlay h1 {
+  margin: 8px 0 10px;
+  font-size: 46px;
+  letter-spacing: 0.06em;
+  color: #e23b2f;
+}
+
+#overlay .mark,
+#overlay .hint,
+#overlay p {
+  margin: 6px 0;
+  color: #c8b49a;
+}
+
+#btn-play,
+#btn-fire {
+  border: 0;
+  border-radius: 16px;
+  font: 800 20px/1 Arial, sans-serif;
+  letter-spacing: 0.08em;
+}
+
+#btn-play {
+  margin-top: 18px;
+  height: 58px;
+  padding: 0 28px;
+  background: #e23b2f;
+  color: #fff4f2;
+}
+
+#mobile-ui {
+  display: none;
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(10px + env(safe-area-inset-bottom));
+  padding: 0 16px;
+  align-items: flex-end;
+  justify-content: space-between;
+}
+
+html.phone #mobile-ui {
+  display: flex;
+}
+
+#stick {
+  width: 118px;
+  height: 118px;
+  border-radius: 50%;
+  background: rgba(40, 16, 12, 0.7);
+  border: 3px solid #7a2a18;
+}
+
+#btn-fire {
+  width: 96px;
+  height: 96px;
+  border-radius: 50%;
+  background: #e23b2f;
+  color: #fff4f2;
+}
+
+#btn-play:active,
+#btn-fire:active {
+  filter: brightness(1.15);
+}

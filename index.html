@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover"
+    />
+    <meta name="theme-color" content="#120808" />
+    <title>Sullen Doom — Sullen Studio</title>
+  </head>
+  <body>
+    <div id="app">
+      <canvas id="view"></canvas>
+      <div id="hud">
+        <span id="hp">HP 100</span>
+        <span id="ammo">AMMO 40</span>
+        <span id="kills">KILLS 0</span>
+      </div>
+      <div id="overlay">
+        <p class="mark">SULLEN STUDIO</p>
+        <h1>SULLEN DOOM</h1>
+        <p>a cramped corridor shooter</p>
+        <button type="button" id="btn-play">RIP AND TEAR</button>
+        <p class="hint">WASD move · mouse look · click / space fire</p>
+      </div>
+      <div id="mobile-ui">
+        <div id="stick"></div>
+        <button type="button" id="btn-fire">FIRE</button>
+      </div>
+    </div>
+    <script type="module" src="./src/main.js"></script>
+  </body>
+</html>
