@@ -1,6 +1,7 @@
 import "./style.css";
-import { generateTextures } from "./assets/textures.js";
+import { TEXTURE_SLOT, generateTextures } from "./assets/textures.js";
 import { parseMap } from "./game/map.js";
+import { renderFloorCeiling } from "./render/floors.js";
 import { createPresenter } from "./render/framebuffer.js";
 import { PALETTE, PALETTE_SIZE, SHADE_LEVELS, buildShadeTable } from "./render/palette.js";
 import { makeCamera } from "./render/raycast.js";
@@ -296,9 +297,13 @@ function draw() {
   const camera = makeCamera(player.x, player.y, player.a, FOV);
   const horizon = fb.height >> 1;
 
-  fb.fillRect(0, 0, fb.width, horizon, shadeTable[6 * PALETTE_SIZE + 12]);
-  fb.fillRect(0, horizon, fb.width, fb.height - horizon,
-    shadeTable[6 * PALETTE_SIZE + 0]);
+  renderFloorCeiling(
+    fb,
+    camera,
+    textures[TEXTURE_SLOT.floor],
+    textures[TEXTURE_SLOT.ceiling],
+    { shadeTable, paletteSize: PALETTE_SIZE, lightBoost, horizon },
+  );
 
   renderWalls(fb, map, camera, textures, {
     shadeTable,
