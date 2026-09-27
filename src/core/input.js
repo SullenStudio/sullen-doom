@@ -53,6 +53,7 @@ export function createInput(canvas, config) {
   };
 
   let lookAccum = 0;
+  const padCleanup = [];
   // Pointer lock is granted asynchronously, so a click can never observe its
   // own result. Drag-to-look stays available only once a request has
   // actually been refused.
@@ -65,7 +66,7 @@ export function createInput(canvas, config) {
   }
 
   function requestLock() {
-    if (phone || state.locked) return;
+    if (phone || state.locked || lockUnavailable) return;
     const result = canvas.requestPointerLock?.();
     if (result && typeof result.catch === "function") {
       result.catch(() => {
@@ -182,6 +183,10 @@ export function createInput(canvas, config) {
   canvas.addEventListener("pointercancel", onPointerEnd);
 
   function destroy() {
+    // Listeners attached by bindStickPad live on another element, so they are
+    // collected here rather than being unreachable from this function.
+    for (const undo of padCleanup) undo();
+    padCleanup.length = 0;
     window.removeEventListener("keydown", onKeyDown);
     window.removeEventListener("keyup", onKeyUp);
     document.removeEventListener("pointerlockchange", onLockChange);
@@ -196,6 +201,10 @@ export function createInput(canvas, config) {
 
   /** Bind the on-screen stick pad. Phone only. */
   state.bindStickPad = function bindStickPad(element) {
+    const on = (type, handler) => {
+      element.addEventListener(type, handler);
+      padCleanup.push(() => element.removeEventListener(type, handler));
+    };
     const fromPad = (e) => {
       const r = element.getBoundingClientRect();
       setStickFromPoint(e.clientX, e.clientY, {
@@ -203,13 +212,13 @@ export function createInput(canvas, config) {
         y: r.top + r.height / 2,
       });
     };
-    element.addEventListener("pointerdown", (e) => {
+    on("pointerdown", (e) => {
       e.stopPropagation();
       element.setPointerCapture(e.pointerId);
       pointers.set(e.pointerId, { kind: "move", x: e.clientX, y: e.clientY });
       fromPad(e);
     });
-    element.addEventListener("pointermove", (e) => {
+    on("pointermove", (e) => {
       if (!pointers.has(e.pointerId)) return;
       fromPad(e);
     });
@@ -218,8 +227,8 @@ export function createInput(canvas, config) {
       stick.x = 0;
       stick.y = 0;
     };
-    element.addEventListener("pointerup", clear);
-    element.addEventListener("pointercancel", clear);
+    on("pointerup", clear);
+    on("pointercancel", clear);
   };
 
   return state;
