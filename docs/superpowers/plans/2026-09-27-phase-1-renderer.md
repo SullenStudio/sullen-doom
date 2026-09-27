@@ -1164,6 +1164,12 @@ Expected: FAIL — модуль не найден.
  * `dir + plane * cameraX`. Walls, floors and sprites all share this frame,
  * which is what keeps them aligned with each other.
  */
+/**
+ * Smallest distance the cast will report. Callers divide a wall height by
+ * this value, so it must never reach zero.
+ */
+const MIN_DIST = 0.01;
+
 export function makeCamera(x, y, angle, fov) {
   const dirX = Math.cos(angle);
   const dirY = Math.sin(angle);
@@ -1214,10 +1220,13 @@ export function castColumn(map, camera, cameraX, maxDist = 32) {
   // Standing inside a wall would otherwise let the ray escape the level.
   if (map.isSolid(mapX, mapY)) {
     return {
-      hit: true, dist: 0.01, side: 0, texU: 0, mapX, mapY, rayDirX, rayDirY,
+      hit: true, dist: MIN_DIST, side: 0, texU: 0, mapX, mapY, rayDirX, rayDirY,
     };
   }
 
+  // maxDist is tested before each step, so the final crossing may land
+  // slightly beyond it: the returned dist is not hard-bounded by maxDist.
+  // Anything sizing a table by maxDist must clamp its own index.
   let side = 0;
   let travelled = 0;
   let hit = false;
@@ -1245,9 +1254,17 @@ export function castColumn(map, camera, cameraX, maxDist = 32) {
     };
   }
 
-  const dist = side === 0
+  // Perpendicular distance to the face just crossed. The (1 - step) / 2 term
+  // selects which edge of the cell the ray entered through.
+  //
+  // This can come out as exactly 0 when the camera sits on an integer
+  // coordinate flush against a solid cell, and grazing hits land within a
+  // rounding error of 0. The inside-a-wall guard above already avoids
+  // returning 0; apply the same floor here so no caller can divide by it.
+  const raw = side === 0
     ? (mapX - camera.x + (1 - stepX) / 2) / rayDirX
     : (mapY - camera.y + (1 - stepY) / 2) / rayDirY;
+  const dist = raw < MIN_DIST ? MIN_DIST : raw;
 
   let texU = side === 0
     ? camera.y + dist * rayDirY
