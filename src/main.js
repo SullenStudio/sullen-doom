@@ -291,6 +291,7 @@ function die() {
 }
 
 function draw() {
+  if (!presenter) return;
   const fb = presenter.fb;
   const camera = makeCamera(player.x, player.y, player.a, FOV);
   const horizon = fb.height >> 1;
@@ -315,8 +316,15 @@ function resize() {
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
   canvas.width = Math.floor(canvas.clientWidth * dpr);
   canvas.height = Math.floor(canvas.clientHeight * dpr);
-  const aspect = canvas.width / Math.max(1, canvas.height);
-  const internalHeight = Math.max(120, Math.round(INTERNAL_WIDTH / aspect));
+  // The canvas can measure zero while layout is still settling (or if an
+  // ancestor is hidden). Bail out rather than dividing by zero: that would
+  // ask createPresenter for an Infinity-tall buffer and throw.
+  if (canvas.width < 1 || canvas.height < 1) return;
+  const aspect = canvas.width / canvas.height;
+  const internalHeight = Math.min(
+    720,
+    Math.max(120, Math.round(INTERNAL_WIDTH / aspect)),
+  );
   if (
     !presenter ||
     presenter.width !== INTERNAL_WIDTH ||

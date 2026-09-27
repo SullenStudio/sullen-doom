@@ -96,4 +96,48 @@ describe("renderWalls", () => {
   it("survives a camera standing in a wall without throwing", () => {
     expect(() => render(makeCamera(0.5, 0.5, 0, FOV))).not.toThrow();
   });
+
+  it("marks a miss with Infinity in the z-buffer while a hit column stays finite", () => {
+    // A long open corridor: walls only at the far ends (columns 0 and 22),
+    // more than maxDist apart. A ray sent straight down its centreline never
+    // reaches either end wall within maxDist and must miss; rays sent toward
+    // the near top/bottom walls hit within a couple of units.
+    const { map: corridor } = parseMap([
+      "#######################",
+      "#.....................#",
+      "#.....................#",
+      "#.....................#",
+      "#######################",
+    ]);
+    const width = 64;
+    const height = 40;
+    const fb = createFramebuffer(width, height);
+    fb.clear(0);
+    const zbuf = new Float32Array(width);
+    const camera = makeCamera(2.5, 2.5, 0, FOV);
+    renderWalls(fb, corridor, camera, textures, {
+      shadeTable,
+      paletteSize: PALETTE_SIZE,
+      zbuf,
+      maxDist: 10,
+      lightBoost: 0,
+      horizon: height >> 1,
+    });
+
+    // Straight ahead (cameraX === 0 exactly for the middle column): the ray
+    // travels parallel to the corridor and never hits the near top/bottom
+    // walls, and the end walls are far past maxDist.
+    const centre = width >> 1;
+    expect(zbuf[centre]).toBe(Infinity);
+
+    // The leftmost and rightmost columns are angled sharply enough to hit
+    // the corridor's top/bottom wall a couple of units away, well inside
+    // maxDist.
+    expect(Number.isFinite(zbuf[0])).toBe(true);
+    expect(zbuf[0]).toBeGreaterThan(0);
+    expect(zbuf[0]).toBeLessThan(10);
+    expect(Number.isFinite(zbuf[width - 1])).toBe(true);
+    expect(zbuf[width - 1]).toBeGreaterThan(0);
+    expect(zbuf[width - 1]).toBeLessThan(10);
+  });
 });
