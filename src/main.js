@@ -25,10 +25,14 @@ const FOV = Math.PI / 3;
 const MAG_SIZE = 8;
 const RELOAD_T = 0.85;
 const MOVE = 2.8;
-const MOVE_PHONE = 5.2;
+const MOVE_PHONE = 7.4;
 const TURN = 2.4;
 const ENEMY_SPEED = 0.85;
-const LOOK_PHONE = 0.0075;
+// Phone look: bigger = faster turn. Try 0.02–0.05.
+const LOOK_PHONE = 0.028;
+const LOOK_DESK = 0.0045;
+// Thumb travel in px to reach full walk. Smaller = snappier.
+const STICK_PX = 28;
 const BEST_KEY = "sullen-doom-best";
 
 const phone =
@@ -167,9 +171,9 @@ function analog() {
   mx += stick.x;
   my += -stick.y;
   const raw = Math.hypot(mx, my);
-  if (raw < 0.12) return { x: 0, y: 0 };
-  const mag = Math.min(1, (raw - 0.08) / 0.92);
-  const boost = phone ? 0.7 + 0.3 * mag : mag;
+  if (raw < 0.04) return { x: 0, y: 0 };
+  const mag = Math.min(1, (raw - 0.02) / 0.98);
+  const boost = phone ? 0.85 + 0.15 * mag : mag;
   return { x: (mx / raw) * boost, y: (my / raw) * boost };
 }
 
@@ -343,8 +347,8 @@ function loop(now) {
 }
 
 function setStickFromPoint(clientX, clientY, origin) {
-  const dx = (clientX - origin.x) / 52;
-  const dy = (clientY - origin.y) / 52;
+  const dx = (clientX - origin.x) / STICK_PX;
+  const dy = (clientY - origin.y) / STICK_PX;
   const l = Math.hypot(dx, dy) || 1;
   const cap = Math.min(1.15, l);
   stick.x = (dx / l) * cap;
@@ -378,7 +382,7 @@ canvas.addEventListener("pointermove", (e) => {
   const p = pointers.get(e.pointerId);
   if (!p) return;
   if (p.kind === "look") {
-    const sens = phone ? LOOK_PHONE : 0.0045;
+    const sens = phone ? LOOK_PHONE : LOOK_DESK;
     player.a += (e.clientX - p.x) * sens;
     p.x = e.clientX;
     p.y = e.clientY;
