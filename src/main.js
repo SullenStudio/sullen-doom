@@ -76,6 +76,8 @@ const input = createInput(canvas, {
   onSwap: () => swapWeapon(),
   onReload: () => startReload(),
   onRestart: () => reset(),
+  onSelectWeapon: (slot) => selectWeapon(slot),
+  onMelee: () => melee(),
   isPlaying: () => phase === "play",
 });
 if (phone) input.bindStickPad(document.getElementById("stick"));
@@ -150,6 +152,18 @@ function syncHud() {
 function swapWeapon() {
   if (phase !== "play") return;
   weapon = weapon === "gun" ? "stick" : "gun";
+  firing = false;
+  syncHud();
+}
+
+// input.js only knows key codes, not the weapon roster, so it hands over a
+// raw 1-based slot number. Unknown slots (anything but the two weapons this
+// phase has) are ignored rather than erroring.
+function selectWeapon(slot) {
+  if (phase !== "play") return;
+  if (slot === 1) weapon = "gun";
+  else if (slot === 2) weapon = "stick";
+  else return;
   firing = false;
   syncHud();
 }
