@@ -14,6 +14,8 @@ raycaster, demons in the dark, no external assets.
 | click / space | fire |
 | Phone | left stick + FIRE, drag the view to look |
 
+Best kill count is stored in `localStorage`.
+
 ```bash
 npm install
 npm run dev
