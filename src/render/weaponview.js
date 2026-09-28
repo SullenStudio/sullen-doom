@@ -35,21 +35,21 @@ function boxRect(originX, baseY, boxW, boxH, x0, y0, x1, y1) {
   return [px, py, pw, ph];
 }
 
-// Gun bounding box: about a third of the screen width, anchored right of
-// centre, low enough that even the muzzle flash stays under the horizon.
+// Gun bounding box. Slightly right of screen centre and low enough that even
+// the muzzle flash stays below the horizon.
 const GUN_WIDTH_FRAC = 0.3;
-const GUN_HEIGHT_FRAC = 0.5;
+const GUN_HEIGHT_FRAC = 0.36;
+const GUN_CENTRE_FRAC = 0.54;
 const GUN_KICK_FRAC = 0.02;
 
 function drawGun(fb, view, options) {
   const { width, height } = fb;
-  const marginX = width * MARGIN_X_FRAC;
   const marginBottom = height * MARGIN_BOTTOM_FRAC;
   const boxW = width * GUN_WIDTH_FRAC;
   const boxH = height * GUN_HEIGHT_FRAC;
   const kick = view.cooldown > 0 ? height * GUN_KICK_FRAC : 0;
 
-  const originX = width - marginX - boxW;
+  const originX = width * GUN_CENTRE_FRAC - boxW / 2;
   const baseY = height - marginBottom + kick;
 
   const part = (x0, y0, x1, y1, colorIndex) => {
@@ -57,16 +57,27 @@ function drawGun(fb, view, options) {
     fb.fillRect(px, py, pw, ph, shade(options, colorIndex));
   };
 
-  // Grip, receiver, barrel and muzzle cap all overlap their neighbour so the
-  // silhouette reads as one connected object instead of floating blocks.
-  part(0.02, 0.0, 0.26, 0.42, RAMP.rust + 1); // grip
-  part(0.1, 0.3, 0.64, 0.56, RAMP.concrete + 2); // receiver
-  part(0.56, 0.4, 0.86, 0.6, RAMP.concrete + 3); // barrel
-  part(0.82, 0.38, 0.96, 0.62, RAMP.concrete + 0); // muzzle cap
+  // The weapon is seen from BEHIND, not from the side: the player is looking
+  // down its length, so it is built bottom-to-top and narrows as it recedes.
+  // Laying the parts out left-to-right instead would draw a catalogue-style
+  // side profile, which reads as a gun aimed across the screen rather than
+  // into it.
+  //
+  // Each part overlaps the one below so the silhouette stays connected.
+  part(0.04, 0.0, 0.96, 0.3, RAMP.rust + 1); // hands on the grip, nearest
+  part(0.12, 0.05, 0.88, 0.16, RAMP.rust + 3); // lit top edge of the grip
+  part(0.2, 0.26, 0.8, 0.56, RAMP.concrete + 2); // receiver
+  part(0.28, 0.5, 0.72, 0.72, RAMP.concrete + 3); // slide, catching the light
+  part(0.42, 0.66, 0.58, 0.9, RAMP.concrete + 1); // barrel, receding
+  part(0.38, 0.86, 0.62, 0.95, RAMP.concrete + 0); // muzzle ring
 
   if (view.cooldown > 0.08) {
-    part(0.88, 0.28, 1.0, 0.7, ACCENT.goldLight); // muzzle flash burst
-    part(0.9, 0.4, 0.99, 0.6, ACCENT.gold); // bright core
+    // The flash blooms around the muzzle, symmetric about the barrel rather
+    // than trailing off to one side. Built as a cross of a wide low burst
+    // and a narrow spike so it reads as a flash rather than a solid bar.
+    part(0.3, 0.88, 0.7, 0.96, ACCENT.gold);
+    part(0.42, 0.9, 0.58, 1.0, ACCENT.goldLight);
+    part(0.36, 0.91, 0.64, 0.97, ACCENT.goldLight);
   }
 }
 
