@@ -26,3 +26,34 @@ export function slideMove(map, actor, nx, ny, { blockers = [], minDist = 0 } = {
     actor.y = ny;
   }
 }
+
+/**
+ * Nudge overlapping living bodies apart so they cannot occupy one point.
+ * Wall resolution is left to the next walk step.
+ */
+export function separateBodies(bodies, minDist) {
+  for (let i = 0; i < bodies.length; i++) {
+    const a = bodies[i];
+    if (a.hp <= 0) continue;
+    for (let j = i + 1; j < bodies.length; j++) {
+      const b = bodies[j];
+      if (b.hp <= 0) continue;
+      const dx = b.x - a.x;
+      const dy = b.y - a.y;
+      const dist = Math.hypot(dx, dy);
+      if (dist >= minDist) continue;
+      if (dist < 1e-6) {
+        b.x += minDist * 0.5;
+        continue;
+      }
+      const push = (minDist - dist) / 2;
+      const nx = dx / dist;
+      const ny = dy / dist;
+      a.x -= nx * push;
+      a.y -= ny * push;
+      b.x += nx * push;
+      b.y += ny * push;
+    }
+  }
+}
+

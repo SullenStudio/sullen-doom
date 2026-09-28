@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
   AMMO_BULLETS,
+  AMMO_SHELLS,
   WEAPONS,
   WEAPON_SLOTS,
   nextWeaponId,
+  startingMags,
+  startingReserves,
   weaponById,
   weaponBySlot,
 } from "./weapons.js";
@@ -65,6 +68,10 @@ describe("WEAPON_SLOTS", () => {
   it("has no duplicates", () => {
     expect(new Set(WEAPON_SLOTS).size).toBe(WEAPON_SLOTS.length);
   });
+
+  it("offers pipe, pistol, shotgun and chaingun in that order", () => {
+    expect(WEAPON_SLOTS).toEqual(["pipe", "pistol", "shotgun", "chaingun"]);
+  });
 });
 
 describe("weaponBySlot", () => {
@@ -114,5 +121,35 @@ describe("nextWeaponId", () => {
 describe("ammo", () => {
   it("names the bullet pool the pistol draws from", () => {
     expect(WEAPONS.pistol.ammo).toBe(AMMO_BULLETS);
+  });
+
+  it("puts the shotgun on its own shell pool", () => {
+    expect(WEAPONS.shotgun.ammo).toBe(AMMO_SHELLS);
+    expect(WEAPONS.shotgun.pellets).toBe(7);
+    expect(WEAPONS.shotgun.spread).toBeGreaterThan(0);
+  });
+
+  it("lets the chaingun share bullets with the pistol", () => {
+    expect(WEAPONS.chaingun.ammo).toBe(AMMO_BULLETS);
+    expect(WEAPONS.chaingun.cooldown).toBeLessThan(WEAPONS.pistol.cooldown);
+    expect(WEAPONS.chaingun.spreadHeat).toBeGreaterThan(0);
+  });
+
+  it("starts every hitscan weapon with a full magazine", () => {
+    const mags = startingMags();
+    for (const id of WEAPON_SLOTS) {
+      const weapon = WEAPONS[id];
+      if (weapon.kind !== "hitscan") {
+        expect(mags[id]).toBeUndefined();
+        continue;
+      }
+      expect(mags[id]).toBe(weapon.magSize);
+    }
+  });
+
+  it("starts with a reserve for every ammo type in the table", () => {
+    const reserves = startingReserves();
+    expect(reserves[AMMO_BULLETS]).toBeGreaterThan(0);
+    expect(reserves[AMMO_SHELLS]).toBeGreaterThan(0);
   });
 });

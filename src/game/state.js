@@ -1,7 +1,7 @@
+import { startingMags, startingReserves } from "./weapons.js";
+
 const START_HP = 100;
-const START_MAG = 8;
-const START_RESERVE = 40;
-const ENEMY_HP = 2;
+const ENEMY_HP = 8;
 
 function spawnEnemies(parsed) {
   return parsed.enemySpawns.map((s) => ({
@@ -12,11 +12,19 @@ function spawnEnemies(parsed) {
   }));
 }
 
+function freshLoadout() {
+  return {
+    mags: startingMags(),
+    reserves: startingReserves(),
+  };
+}
+
 /**
  * All mutable match state in one place, so `main.js` can go back to being
  * wiring instead of a pile of module-level variables.
  */
 export function createGameState(parsed) {
+  const loadout = freshLoadout();
   const state = {
     player: {
       x: parsed.playerStart.x,
@@ -25,9 +33,11 @@ export function createGameState(parsed) {
     },
     enemies: spawnEnemies(parsed),
     hp: START_HP,
-    mag: START_MAG,
-    reserve: START_RESERVE,
+    mags: loadout.mags,
+    reserves: loadout.reserves,
     reloading: 0,
+    reloadId: null,
+    heat: 0,
     kills: 0,
     cooldown: 0,
     hurt: 0,
@@ -39,6 +49,7 @@ export function createGameState(parsed) {
     weapon: "pistol",
     phase: "menu",
     reset() {
+      const next = freshLoadout();
       state.player = {
         x: parsed.playerStart.x,
         y: parsed.playerStart.y,
@@ -47,9 +58,11 @@ export function createGameState(parsed) {
       // Fresh objects every time: reusing them would carry damage across.
       state.enemies = spawnEnemies(parsed);
       state.hp = START_HP;
-      state.mag = START_MAG;
-      state.reserve = START_RESERVE;
+      state.mags = next.mags;
+      state.reserves = next.reserves;
       state.reloading = 0;
+      state.reloadId = null;
+      state.heat = 0;
       state.kills = 0;
       state.cooldown = 0;
       state.hurt = 0;

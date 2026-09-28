@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { parseMap } from "./map.js";
 import { ENEMY_RADIUS } from "./hitscan.js";
-import { PLAYER_RADIUS, slideMove } from "./move.js";
+import { PLAYER_RADIUS, slideMove, separateBodies } from "./move.js";
 
 const { map } = parseMap([
   "#########",
@@ -62,5 +62,22 @@ describe("slideMove", () => {
     const corpse = foe(3.5, 2.5, 0);
     slideMove(map, player, 3.5, 2.5, { blockers: [corpse], minDist });
     expect(player.x).toBeCloseTo(3.5, 10);
+  });
+});
+
+describe("separateBodies", () => {
+  it("pushes overlapping living enemies apart", () => {
+    const a = foe(4.5, 4.5);
+    const b = foe(4.6, 4.5);
+    separateBodies([a, b], 0.7);
+    expect(Math.hypot(a.x - b.x, a.y - b.y)).toBeGreaterThanOrEqual(0.7 - 1e-9);
+  });
+
+  it("ignores corpses", () => {
+    const a = foe(4.5, 4.5);
+    const b = foe(4.55, 4.5, 0);
+    const ax = a.x;
+    separateBodies([a, b], 0.7);
+    expect(a.x).toBe(ax);
   });
 });

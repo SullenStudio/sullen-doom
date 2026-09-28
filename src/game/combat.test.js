@@ -85,6 +85,11 @@ describe("fireWeapon", () => {
     expect(hits[0].killed).toBe(false);
   });
 
+  it("fires the shotgun's seven pellets", () => {
+    const hits = fireWeapon(world([]), WEAPONS.shotgun, () => 0.5);
+    expect(hits).toHaveLength(WEAPONS.shotgun.pellets);
+  });
+
   it("fires one record per pellet", () => {
     const shotgun = { ...WEAPONS.pistol, pellets: 5, spread: 0.08 };
     const hits = fireWeapon(world([]), shotgun, () => 0.5);

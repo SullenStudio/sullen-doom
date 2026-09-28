@@ -5,13 +5,15 @@ import { createLoop } from "./core/loop.js";
 import { casingSpawn, fireWeapon, swingMelee } from "./game/combat.js";
 import { ENEMY_RADIUS } from "./game/hitscan.js";
 import { parseMap } from "./game/map.js";
-import { PLAYER_RADIUS, slideMove } from "./game/move.js";
+import { PLAYER_RADIUS, separateBodies, slideMove } from "./game/move.js";
 import { createParticles } from "./game/particles.js";
 import { createGameState, createHudBinding } from "./game/state.js";
 import {
   WEAPONS,
   WEAPON_SLOTS,
+  magOf,
   nextWeaponId,
+  reserveOf,
   weaponById,
   weaponBySlot,
 } from "./game/weapons.js";
@@ -26,22 +28,24 @@ import { renderWalls } from "./render/walls.js";
 import { renderCrosshair, renderFlash, renderWeapon } from "./render/weaponview.js";
 
 const MAP_LINES = [
-  "################",
-  "#..............#",
-  "#..22......22..#",
-  "#..............#",
-  "##....3333....##",
-  "#..............#",
-  "#..E........E..#",
-  "#......P.......#",
-  "#..E........E..#",
-  "#..............#",
-  "##....3333....##",
-  "#..............#",
-  "#..55......55..#",
-  "#..............#",
-  "#......E.......#",
-  "################",
+  "##################",
+  "#................#",
+  "#..E....22....E..#",
+  "#................#",
+  "#......####......#",
+  "#..E..........E..#",
+  "#................#",
+  "##....E....E....##",
+  "#................#",
+  "#........P.......#",
+  "#................#",
+  "##....E....E....##",
+  "#................#",
+  "#..E..........E..#",
+  "#......####......#",
+  "#................#",
+  "#..E....55....E..#",
+  "##################",
 ];
 
 const parsed = parseMap(MAP_LINES);
@@ -139,9 +143,9 @@ function syncHud() {
     ammo:
       weapon.kind === "melee"
         ? weapon.name
-        : state.reloading > 0
+        : state.reloading > 0 && state.reloadId === weapon.id
           ? "RELOAD"
-          : `${weapon.name} ${state.mag}/${state.reserve}`,
+          : `${weapon.name} ${magOf(state.mags, weapon)}/${reserveOf(state.reserves, weapon)}`,
     kills: `KILLS ${state.kills}`,
   });
 }
@@ -194,17 +198,18 @@ function attack() {
   }
 
   if (state.cooldown > 0 || state.reloading > 0) return;
-  if (state.mag <= 0) {
+  if (magOf(state.mags, weapon) <= 0) {
     startReload();
     return;
   }
-  state.mag -= 1;
+  state.mags[weapon.id] -= 1;
   ejectCasing();
   state.cooldown = weapon.cooldown;
   state.shake = weapon.shake;
   state.lightBoost = weapon.lightBoost;
-  applyHits(fireWeapon(world(), weapon));
-  if (state.mag <= 0) startReload();
+  const spread = (weapon.spread ?? 0) + (weapon.spreadHeat ?? 0) * state.heat;
+  applyHits(fireWeapon(world(), { ...weapon, spread }));
+  if (magOf(state.mags, weapon) <= 0) startReload();
   syncHud();
 }
 
@@ -282,13 +287,14 @@ function startReload() {
   if (weapon.kind !== "hitscan") return;
   if (
     state.reloading > 0 ||
-    state.reserve <= 0 ||
-    state.mag >= weapon.magSize ||
+    reserveOf(state.reserves, weapon) <= 0 ||
+    magOf(state.mags, weapon) >= weapon.magSize ||
     state.phase !== "play"
   ) {
     return;
   }
   state.reloading = weapon.reloadTime;
+  state.reloadId = weapon.id;
   syncHud();
 }
 
@@ -304,14 +310,23 @@ function update(dt) {
   if (state.reloading > 0) {
     state.reloading -= dt;
     if (state.reloading <= 0) {
-      const weapon = currentWeapon();
-      const need = (weapon.magSize ?? 0) - state.mag;
-      const take = Math.min(Math.max(0, need), state.reserve);
-      state.mag += take;
-      state.reserve -= take;
+      const weapon = weaponById(state.reloadId) ?? currentWeapon();
+      if (weapon.kind === "hitscan") {
+        const need = weapon.magSize - magOf(state.mags, weapon);
+        const take = Math.min(Math.max(0, need), reserveOf(state.reserves, weapon));
+        state.mags[weapon.id] += take;
+        state.reserves[weapon.ammo] -= take;
+      }
       state.reloading = 0;
+      state.reloadId = null;
     }
   }
+
+  const spinning =
+    (input.firing || firing) && currentWeapon().id === "chaingun" && state.reloading <= 0;
+  state.heat = spinning
+    ? Math.min(1, state.heat + dt * 1.4)
+    : Math.max(0, state.heat - dt * 2.2);
 
   state.player.a += input.consumeLook();
   const move = readMoveAxes(input.keys, input.stick);
@@ -346,6 +361,7 @@ function update(dt) {
       if (state.hp <= 0) die();
     }
   }
+  separateBodies(state.enemies, ENEMY_RADIUS * 2);
   particles.update(dt, map);
   syncHud();
 }

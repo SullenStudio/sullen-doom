@@ -28,6 +28,23 @@ describe("createGameState", () => {
     expect(s.hp).toBe(100);
     expect(s.kills).toBe(0);
     expect(s.phase).toBe("menu");
+    expect(s.mags.pistol).toBeGreaterThan(0);
+    expect(s.mags.shotgun).toBeGreaterThan(0);
+    expect(s.reserves.bullets).toBeGreaterThan(0);
+    expect(s.reserves.shells).toBeGreaterThan(0);
+  });
+
+  it("does not share magazines between pistol and shotgun", () => {
+    const s = createGameState(parsed);
+    s.mags.pistol = 1;
+    expect(s.mags.shotgun).toBeGreaterThan(1);
+  });
+
+  it("shares the bullet reserve between pistol and chaingun", () => {
+    const s = createGameState(parsed);
+    const before = s.reserves.bullets;
+    s.reserves.bullets -= 5;
+    expect(s.reserves.bullets).toBe(before - 5);
   });
 
   it("gives every reset a fresh enemy list", () => {
