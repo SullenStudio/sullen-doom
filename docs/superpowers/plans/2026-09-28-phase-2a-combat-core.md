@@ -1821,9 +1821,13 @@ function ejectCasing() {
   // Right-hand vector for this game's convention: forward is (cos, sin).
   const rightX = -Math.sin(a);
   const rightY = Math.cos(a);
+  // Forward must dominate sideways, or the spawn point falls outside the
+  // view cone and the casing is never drawn at all. The half-angle of a 60
+  // degree field of view allows a sideways-to-forward ratio of about 0.58;
+  // 0.12 over 0.35 is roughly 0.34, comfortably inside it.
   particles.spawnBurst(
-    x + rightX * 0.22 + Math.cos(a) * 0.18,
-    y + rightY * 0.22 + Math.sin(a) * 0.18,
+    x + rightX * 0.12 + Math.cos(a) * 0.35,
+    y + rightY * 0.12 + Math.sin(a) * 0.35,
     0.55,
     rightX,
     rightY,
@@ -2041,7 +2045,8 @@ git commit -m "feat: shake the world on impact without moving the aim point"
 - [ ] Выстрел не проходит сквозь стену, за которой стоит враг.
 - [ ] Попадание видно тремя независимыми способами: брызги из точки попадания, вспышка спрайта, метка на прицеле.
 - [ ] Враг отбрасывается от выстрела, но не проваливается в стену.
-- [ ] Каждый выстрел из стрелкового оружия выбрасывает гильзу вправо.
+- [ ] Каждый выстрел из стрелкового оружия выбрасывает видимую гильзу вправо. Точка вылета обязана лежать внутри конуса видимости: при поле зрения 60° отношение бокового смещения к переднему не должно превышать примерно 0.58.
+- [ ] Кровь читается на боевой дистанции, а не только по пикселям. Тёмно-красные брызги на фоне кирпичной стены дают разницу яркости порядка 8 из 255 — ориентироваться надо на то, что видно, а не на то, что нарисовано.
 - [ ] Тряска камеры не смещает прицел и после затухания возвращает горизонт на место.
 - [ ] Оружие описано таблицей: добавление ствола того же вида не требует правок в коде стрельбы.
 - [ ] Удар нельзя удвоить, нажав клавишу удара и клавишу атаки подряд: у обеих одни ворота.
