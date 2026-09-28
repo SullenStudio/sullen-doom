@@ -1815,32 +1815,90 @@ function applyHits(hits) {
 
 В `src/main.js` добавить рядом с `applyHits`:
 
+Расчёт точки вылета живёт в `src/game/combat.js`, а не в `main.js`. Причина
+прозаическая: `main.js` ничего не экспортирует, и всё, что в нём заперто,
+невозможно проверить тестом. Соотношение смещений здесь — не стилистика, а
+условие видимости, и его нужно охранять.
+
+```js
+// Where a spent casing appears: out to the player's right, and further
+// forward than sideways. The view cone at a 60 degree field of view admits
+// a sideways-to-forward ratio of about 0.58. Beyond that the spawn point is
+// outside the frustum and the casing is never drawn at all — it ejects and
+// falls exactly as simulated, invisibly.
+const CASING_SIDE = 0.12;
+const CASING_FORWARD = 0.35;
+
+export function casingSpawn(player) {
+  const rightX = -Math.sin(player.a);
+  const rightY = Math.cos(player.a);
+  return {
+    x: player.x + rightX * CASING_SIDE + Math.cos(player.a) * CASING_FORWARD,
+    y: player.y + rightY * CASING_SIDE + Math.sin(player.a) * CASING_FORWARD,
+    dirX: rightX,
+    dirY: rightY,
+  };
+}
+```
+
+и в `main.js` остаётся только вызов:
+
 ```js
 function ejectCasing() {
-  const { x, y, a } = state.player;
-  // Right-hand vector for this game's convention: forward is (cos, sin).
-  const rightX = -Math.sin(a);
-  const rightY = Math.cos(a);
-  // Forward must dominate sideways, or the spawn point falls outside the
-  // view cone and the casing is never drawn at all. The half-angle of a 60
-  // degree field of view allows a sideways-to-forward ratio of about 0.58;
-  // 0.12 over 0.35 is roughly 0.34, comfortably inside it.
-  particles.spawnBurst(
-    x + rightX * 0.12 + Math.cos(a) * 0.35,
-    y + rightY * 0.12 + Math.sin(a) * 0.35,
-    0.55,
-    rightX,
-    rightY,
-    1,
-    {
-      colorIndex: ACCENT.gold,
-      speed: 1.1,
-      spread: 0.35,
-      life: 0.7,
-      lift: 1.1,
-    },
-  );
+  const spot = casingSpawn(state.player);
+  particles.spawnBurst(spot.x, spot.y, 0.55, spot.dirX, spot.dirY, 1, {
+    colorIndex: ACCENT.gold,
+    speed: 1.1,
+    spread: 0.35,
+    life: 0.7,
+    lift: 1.1,
+  });
 }
+```
+
+Добавить `casingSpawn` в импорт из `./game/combat.js`.
+
+Тест в `src/game/combat.test.js` — он импортирует два модуля рендера, и это
+намеренно: проверяемое свойство по своей природе связывает мир и камеру.
+
+```js
+import { makeCamera } from "../render/raycast.js";
+import { projectSprite } from "../render/sprites.js";
+import { casingSpawn } from "./combat.js";
+
+describe("casingSpawn", () => {
+  it("lands inside the view cone at every heading", () => {
+    // The offset is rotation-invariant by construction, so a failure here
+    // means the ratio itself drifted out of the frustum — the exact defect
+    // this guards against.
+    for (let i = 0; i < 16; i++) {
+      const a = (i / 16) * Math.PI * 2;
+      const player = { x: 4.5, y: 4.5, a };
+      const spot = casingSpawn(player);
+      const projected = projectSprite(
+        makeCamera(player.x, player.y, a, Math.PI / 3),
+        spot.x,
+        spot.y,
+      );
+      expect(projected).not.toBe(null);
+      expect(projected.screenX).toBeGreaterThan(0);
+      expect(projected.screenX).toBeLessThan(1);
+    }
+  });
+
+  it("ejects to the player's right, not the left", () => {
+    const player = { x: 4.5, y: 4.5, a: 0 };
+    const spot = casingSpawn(player);
+    // Facing +x, the player's right is +y in this game's convention.
+    expect(spot.y).toBeGreaterThan(player.y);
+    expect(spot.dirY).toBeGreaterThan(0);
+  });
+
+  it("puts the spawn point in front of the player", () => {
+    const player = { x: 4.5, y: 4.5, a: 0 };
+    expect(casingSpawn(player).x).toBeGreaterThan(player.x);
+  });
+});
 ```
 
 и вызывать её в `attack` только для стрелкового оружия, сразу после
