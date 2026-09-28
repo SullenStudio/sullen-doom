@@ -1166,6 +1166,28 @@ describe("createParticles", () => {
     }
   });
 
+  it("damps horizontal motion once a particle is resting on the floor", () => {
+    // Drag is behaviour, not tuning: without it a particle slides along the
+    // floor forever at its launch speed. The exact value is free to change,
+    // so this pins that damping happens, not how much.
+    const p = createParticles(8);
+    p.spawnBurst(2.5, 2.5, 0.05, 1, 0, 1, {
+      colorIndex: 3,
+      speed: 1.2,
+      spread: 0,
+      life: 10,
+      lift: 0,
+      random: seq([0.5]),
+    });
+    const q = p.items.find((i) => i.life > 0);
+    // Let it reach the floor first; drag only applies once it is resting.
+    for (let i = 0; i < 5; i++) p.update(1 / 60, map);
+    const resting = Math.abs(q.vx);
+    expect(resting).toBeGreaterThan(0);
+    for (let i = 0; i < 20; i++) p.update(1 / 60, map);
+    expect(Math.abs(q.vx)).toBeLessThan(resting * 0.5);
+  });
+
   it("clear() retires everything", () => {
     const p = createParticles(8);
     burst(p, 6);
