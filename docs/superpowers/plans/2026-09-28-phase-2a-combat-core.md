@@ -50,7 +50,9 @@
 - Consumes: ничего.
 - Produces: `AMMO_BULLETS`; `WEAPONS` (объект, ключ — идентификатор); `WEAPON_SLOTS` (массив идентификаторов, индекс+1 = цифровая клавиша); `weaponBySlot(slot)`; `weaponById(id)`; `nextWeaponId(id, step)`.
 
-В этой фазе в таблице два ствола. Форма записи рассчитана на все шесть: фаза 2B добавляет строки, не трогая код стрельбы.
+В этой фазе в таблице два ствола, и форма записи покрывает два вида оружия: ближний бой и хитскан. Дробовик и пулемёт из фазы 2B — это действительно по одной строке.
+
+Гранатомёт и плазма — нет, и утверждать обратное было бы неправдой: по спеке это снарядное оружие, то есть третий вид, которого в перечислении `kind` пока нет. Фаза 2B добавит значение `"projectile"`, поля скорости снаряда и радиуса взрыва и отдельный модуль их полёта. Таблица от этого не разваливается — код стрельбы получит одну новую ветку по виду оружия, а не по конкретному стволу, — но одной строкой это не обойдётся.
 
 - [ ] **Step 1: Написать падающий тест**
 
@@ -144,6 +146,13 @@ describe("weaponById", () => {
     expect(weaponById(WEAPON_SLOTS[0]).id).toBe(WEAPON_SLOTS[0]);
     expect(weaponById("railgun")).toBe(null);
   });
+
+  it("does not mistake an inherited property for a weapon", () => {
+    // A plain object literal answers for keys it never declared.
+    for (const id of ["toString", "constructor", "hasOwnProperty", "__proto__"]) {
+      expect(weaponById(id)).toBe(null);
+    }
+  });
 });
 
 describe("nextWeaponId", () => {
@@ -226,7 +235,10 @@ export function weaponBySlot(slot) {
 }
 
 export function weaponById(id) {
-  return WEAPONS[id] ?? null;
+  // Own properties only. A plain object literal answers for inherited keys,
+  // so a bare lookup would hand back Object.prototype.toString for the id
+  // "toString" instead of null.
+  return Object.hasOwn(WEAPONS, id) ? WEAPONS[id] : null;
 }
 
 /** Cycles through the carried weapons; `step` is +1 or -1. */
