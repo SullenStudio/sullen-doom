@@ -219,23 +219,32 @@ function applyHits(hits) {
     }
 
     state.hitMark = HIT_MARK_T;
-    particles.spawnBurst(hit.x, hit.y, 0.55, hit.dirX, hit.dirY, 9, {
+    // A low lift is deliberate: at combat range the wall and ceiling behind
+    // an enemy are dark reddish-brown, only a few luminance steps from
+    // blood's own colour, so a spray that lingers airborne is nearly
+    // invisible. Dropping it onto the floor quickly puts it against a much
+    // brighter, more neutral surface where it actually reads.
+    particles.spawnBurst(hit.x, hit.y, 0.55, hit.dirX, hit.dirY, 14, {
       colorIndex: ACCENT.blood,
-      speed: 2.4,
-      spread: 0.9,
-      life: 0.55,
-      lift: 1.4,
+      speed: 2.6,
+      spread: 1.1,
+      life: 0.45,
+      lift: 0.35,
     });
 
     if (hit.killed) {
       state.kills += 1;
-      // A death throws far more, and darker.
-      particles.spawnBurst(hit.x, hit.y, 0.5, hit.dirX, hit.dirY, 18, {
+      // A death throws far more, and darker. bloodDark is intrinsically low
+      // contrast at range — darker than the wall it lands on nearly as
+      // often as it's darker than the floor — so this burst leans on sheer
+      // count and spread rather than per-particle visibility to read as a
+      // bigger event than a normal hit.
+      particles.spawnBurst(hit.x, hit.y, 0.5, hit.dirX, hit.dirY, 24, {
         colorIndex: ACCENT.bloodDark,
-        speed: 3.2,
-        spread: 1.6,
-        life: 0.8,
-        lift: 2.0,
+        speed: 3.6,
+        spread: 1.7,
+        life: 0.5,
+        lift: 0.3,
       });
     }
   }
@@ -246,9 +255,13 @@ function ejectCasing() {
   // Right-hand vector for this game's convention: forward is (cos, sin).
   const rightX = -Math.sin(a);
   const rightY = Math.cos(a);
+  // Forward must dominate sideways, or the spawn point falls outside the
+  // view cone and the casing is never drawn at all. The half-angle of a 60
+  // degree field of view allows a sideways-to-forward ratio of about 0.58;
+  // 0.12 over 0.35 is roughly 0.34, comfortably inside it.
   particles.spawnBurst(
-    x + rightX * 0.22 + Math.cos(a) * 0.18,
-    y + rightY * 0.22 + Math.sin(a) * 0.18,
+    x + rightX * 0.12 + Math.cos(a) * 0.35,
+    y + rightY * 0.12 + Math.sin(a) * 0.35,
     0.55,
     rightX,
     rightY,
