@@ -20,9 +20,6 @@ export function renderParticles(fb, camera, particles, options) {
     if (!p) continue;
 
     const centreX = Math.round(p.screenX * width);
-    if (centreX < 0 || centreX >= width) continue;
-    if (p.depth >= zbuf[centreX]) continue;
-
     const centreY = Math.round(horizon + (height * (0.5 - q.z)) / p.depth);
     const size = Math.max(1, Math.round((height * 0.014) / p.depth));
     const half = size >> 1;
@@ -39,9 +36,12 @@ export function renderParticles(fb, camera, particles, options) {
     if (x0 >= x1 || y0 >= y1) continue;
 
     const color = shadeTable[lightLevel(p.depth, 0, lightBoost) * paletteSize + q.colorIndex];
-    for (let y = y0; y < y1; y++) {
-      const row = y * width;
-      for (let x = x0; x < x1; x++) data[row + x] = color;
+    // Depth-test per column, the way renderSprites does. Testing once at the
+    // centre would draw or drop the whole square, so a particle straddling a
+    // wall edge would spill past the silhouette.
+    for (let x = x0; x < x1; x++) {
+      if (p.depth >= zbuf[x]) continue;
+      for (let y = y0; y < y1; y++) data[y * width + x] = color;
     }
   }
 }
