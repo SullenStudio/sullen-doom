@@ -85,6 +85,13 @@ describe("weaponById", () => {
     expect(weaponById(WEAPON_SLOTS[0]).id).toBe(WEAPON_SLOTS[0]);
     expect(weaponById("railgun")).toBe(null);
   });
+
+  it("does not mistake an inherited property for a weapon", () => {
+    // A plain object literal answers for keys it never declared.
+    for (const id of ["toString", "constructor", "hasOwnProperty", "__proto__"]) {
+      expect(weaponById(id)).toBe(null);
+    }
+  });
 });
 
 describe("nextWeaponId", () => {

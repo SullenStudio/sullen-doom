@@ -46,7 +46,10 @@ export function weaponBySlot(slot) {
 }
 
 export function weaponById(id) {
-  return WEAPONS[id] ?? null;
+  // Own properties only. A plain object literal answers for inherited keys,
+  // so a bare lookup would hand back Object.prototype.toString for the id
+  // "toString" instead of null.
+  return Object.hasOwn(WEAPONS, id) ? WEAPONS[id] : null;
 }
 
 /** Cycles through the carried weapons; `step` is +1 or -1. */
