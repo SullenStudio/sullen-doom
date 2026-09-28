@@ -2074,20 +2074,94 @@ import { shakeOffset } from "./render/shake.js";
       state.shake = Math.max(state.shake, 0.5);
 ```
 
-- [ ] **Step 8: Проверить в игре**
+- [ ] **Step 8: Починить зеркалирование потолка относительно горизонта**
+
+Эта задача впервые сдвигает горизонт, и тем самым обнажает ошибку, жившую
+в `src/render/floors.js` с первой фазы. Потолок там зеркалится относительно
+центра буфера:
+
+```js
+    const ceilRow = (height - y - 1) * width;
+```
+
+Пока горизонт стоит ровно посередине, центр буфера и горизонт совпадают.
+Со смещением — расходятся, и потолок рисуется не там, где ему положено.
+Сейчас это скрыто тем, что стены закрашивают пострадавшую полосу на
+маленькой замкнутой карте, но маскировка держится на свойстве карты, а не
+на верности кода.
+
+Зеркалить надо относительно горизонта:
+
+```js
+    const floorRow = y * width;
+    // Mirror about the horizon, not about the middle of the buffer. The two
+    // coincide only while the horizon sits at height / 2, which stops being
+    // true the moment the view shakes.
+    const ceilY = 2 * horizon - y;
+    const ceilRow = ceilY * width;
+```
+
+и запись в потолок выполнять только когда строка существует:
+
+```js
+      data[floorRow + x] =
+        shadeTable[shadeBase + floorTex.pixels[fy * floorSize + fx]];
+      if (ceilY >= 0) {
+        data[ceilRow + x] =
+          shadeTable[shadeBase + ceilingTex.pixels[cy * ceilSize + cx]];
+      }
+```
+
+Строки, до которых зеркало не достаёт, уже закрыты предзаливкой в начале
+функции — та самая причина, по которой она там стоит.
+
+Добавить в `src/render/floors.test.js` тест, что при смещённом горизонте
+потолок остаётся привязан к нему:
+
+```js
+  it("mirrors the ceiling about a shifted horizon, not the buffer centre", () => {
+    // With the horizon pushed off centre, the ceiling must follow it. The
+    // two are indistinguishable while the horizon sits at height / 2, so
+    // this is the only arrangement that can catch the difference.
+    const shifted = (HEIGHT >> 1) - 8;
+    const fb = createFramebuffer(WIDTH, HEIGHT);
+    fb.clear(0);
+    renderFloorCeiling(
+      fb,
+      makeCamera(2.5, 2.5, 0, FOV),
+      textures[TEXTURE_SLOT.floor],
+      textures[TEXTURE_SLOT.ceiling],
+      { shadeTable, paletteSize: PALETTE_SIZE, lightBoost: 0, horizon: shifted },
+    );
+    // One row below the horizon is floor; its mirror one row above is
+    // ceiling. Warmth separates them: the ceiling is rust, the floor grey.
+    const warmthAt = (y) => {
+      let sum = 0;
+      for (let x = 0; x < WIDTH; x++) {
+        const p = fb.data[y * WIDTH + x];
+        sum += (p & 255) - ((p >> 16) & 255);
+      }
+      return sum / WIDTH;
+    };
+    expect(warmthAt(shifted - 6)).toBeGreaterThan(warmthAt(shifted + 6));
+  });
+```
+
+- [ ] **Step 9: Проверить в игре**
 
 Run: `npm run dev`
 Expected: выстрел из пистолета даёт короткий рывок картинки, удар палкой — слабее, укус врага — заметно сильнее; прицел при этом стоит неподвижно и стрелять по-прежнему точно; после затухания горизонт возвращается ровно на место, без сползания.
 
-- [ ] **Step 9: Проверить, что ничего не сломано**
+- [ ] **Step 10: Проверить, что ничего не сломано**
 
 Run: `npm test && npm run build`
 Expected: обе команды успешны.
 
-- [ ] **Step 10: Commit**
+- [ ] **Step 11: Commit**
 
 ```bash
-git add src/render/shake.js src/render/shake.test.js src/game/state.js src/main.js
+git add src/render/shake.js src/render/shake.test.js src/render/floors.js \
+  src/render/floors.test.js src/game/state.js src/main.js src/game/weapons.js
 git commit -m "feat: shake the world on impact without moving the aim point"
 ```
 
