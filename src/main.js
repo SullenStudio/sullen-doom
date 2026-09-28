@@ -18,6 +18,7 @@ import { createPresenter } from "./render/framebuffer.js";
 import { ACCENT, PALETTE, PALETTE_SIZE, RAMP, SHADE_LEVELS, buildShadeTable, rgb } from "./render/palette.js";
 import { renderParticles } from "./render/particles.js";
 import { makeCamera } from "./render/raycast.js";
+import { shakeOffset } from "./render/shake.js";
 import { renderSprites } from "./render/sprites.js";
 import { renderWalls } from "./render/walls.js";
 import { renderCrosshair, renderFlash, renderWeapon } from "./render/weaponview.js";
@@ -174,6 +175,7 @@ function swingWeapon(weapon) {
   if (state.swing > 0) return;
   state.swing = weapon.swingTime;
   state.cooldown = weapon.cooldown;
+  state.shake = weapon.shake;
   applyHits(swingMelee(world(), weapon));
   syncHud();
 }
@@ -195,6 +197,7 @@ function attack() {
   state.mag -= 1;
   ejectCasing();
   state.cooldown = weapon.cooldown;
+  state.shake = weapon.shake;
   state.lightBoost = weapon.lightBoost;
   applyHits(fireWeapon(world(), weapon));
   if (state.mag <= 0) startReload();
@@ -289,6 +292,7 @@ function update(dt) {
   if (state.phase !== "play") return;
   state.cooldown = Math.max(0, state.cooldown - dt);
   state.lightBoost = Math.max(0, state.lightBoost - dt * 4);
+  state.shake = Math.max(0, state.shake - dt * 3.5);
   state.hitMark = Math.max(0, state.hitMark - dt);
   state.hurt = Math.max(0, state.hurt - dt);
   state.iframes = Math.max(0, state.iframes - dt);
@@ -334,6 +338,7 @@ function update(dt) {
       state.hp -= BITE;
       state.iframes = IFRAMES;
       state.hurt = 0.35;
+      state.shake = Math.max(state.shake, 0.5);
       if (state.hp <= 0) die();
     }
   }
@@ -361,7 +366,7 @@ function draw() {
   if (!presenter) return;
   const fb = presenter.fb;
   const camera = makeCamera(state.player.x, state.player.y, state.player.a, FOV);
-  const horizon = fb.height >> 1;
+  const horizon = (fb.height >> 1) + shakeOffset(state.shake, fb.height);
 
   renderFloorCeiling(
     fb,

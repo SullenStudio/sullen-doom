@@ -35,6 +35,7 @@ export function createGameState(parsed) {
     swing: 0,
     lightBoost: 0,
     hitMark: 0,
+    shake: 0,
     weapon: "pistol",
     phase: "menu",
     reset() {
@@ -56,6 +57,7 @@ export function createGameState(parsed) {
       state.swing = 0;
       state.lightBoost = 0;
       state.hitMark = 0;
+      state.shake = 0;
       state.weapon = "pistol";
       state.phase = "play";
     },
