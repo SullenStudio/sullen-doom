@@ -4,6 +4,7 @@ import { createInput, readMoveAxes } from "./core/input.js";
 import { createLoop } from "./core/loop.js";
 import { fireWeapon, swingMelee } from "./game/combat.js";
 import { parseMap } from "./game/map.js";
+import { createParticles } from "./game/particles.js";
 import { createGameState, createHudBinding } from "./game/state.js";
 import {
   WEAPONS,
@@ -15,6 +16,7 @@ import {
 import { renderFloorCeiling } from "./render/floors.js";
 import { createPresenter } from "./render/framebuffer.js";
 import { PALETTE, PALETTE_SIZE, SHADE_LEVELS, buildShadeTable, rgb } from "./render/palette.js";
+import { renderParticles } from "./render/particles.js";
 import { makeCamera } from "./render/raycast.js";
 import { renderSprites } from "./render/sprites.js";
 import { renderWalls } from "./render/walls.js";
@@ -103,6 +105,7 @@ const MAX_DIST = 32;
 const textures = generateTextures(1337);
 const shadeTable = buildShadeTable(PALETTE, SHADE_LEVELS);
 const enemyBitmap = makeEnemySprite(7);
+const particles = createParticles(192);
 
 let presenter = null;
 let zbuf = new Float32Array(1);
@@ -117,6 +120,7 @@ function world() {
 
 function reset() {
   state.reset();
+  particles.clear();
   firing = false;
   overlayTitle.textContent = MENU_TITLE;
   overlaySub.textContent = MENU_SUB;
@@ -277,6 +281,7 @@ function update(dt) {
       if (state.hp <= 0) die();
     }
   }
+  particles.update(dt, map);
   syncHud();
 }
 
@@ -337,6 +342,14 @@ function draw() {
       scale: 0.7,
     },
   );
+
+  renderParticles(fb, camera, particles, {
+    shadeTable,
+    paletteSize: PALETTE_SIZE,
+    zbuf,
+    horizon,
+    lightBoost: state.lightBoost,
+  });
 
   if (state.phase === "play") {
     renderWeapon(
