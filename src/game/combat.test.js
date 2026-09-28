@@ -137,6 +137,80 @@ describe("swingMelee", () => {
     swingMelee(world([e]), WEAPONS.pipe);
     expect(e.hp).toBe(10);
   });
+
+  // Nothing above rules out an implementation that stops sweeping after its
+  // first hit — every prior test used a single enemy, so "return early once
+  // something is hit" would still pass all of them. Two separate enemies
+  // standing inside the same arc, each within range, must both take damage.
+  it("damages two separate enemies standing inside the same swing", () => {
+    const a = foe(5.6, 4.5);
+    const b = foe(5.3, 4.9);
+    const hits = swingMelee(world([a, b]), WEAPONS.pipe);
+    expect(a.hp).toBe(10 - WEAPONS.pipe.damage);
+    expect(b.hp).toBe(10 - WEAPONS.pipe.damage);
+    expect(hits.filter((h) => h.kind === "enemy" && h.enemy === a)).toHaveLength(1);
+    expect(hits.filter((h) => h.kind === "enemy" && h.enemy === b)).toHaveLength(1);
+  });
+});
+
+// Review found that src/main.js used to give the melee swing two entry
+// points with two different gates: attack()'s melee branch checked
+// state.cooldown, quickMelee() (the standing F-key panic melee) checked
+// state.swing. Neither wrote what the other read, so pressing both in the
+// same instant landed two full swings. The fix collapses both callers onto
+// one function, swingWeapon(weapon), whose only gate is state.swing.
+//
+// src/main.js has no automated coverage of its own (it runs DOM setup at
+// import time and this project has no stubbed-DOM test harness — seeing
+// that gap was exactly what let the original bug go unnoticed by `npm
+// test`). So this reproduces swingWeapon's body verbatim against the real
+// swingMelee from this module, rather than exercising src/main.js directly.
+// That is a real limitation: if src/main.js's swingWeapon ever diverges from
+// what is copied below, this test stops proving anything about the actual
+// game and nothing here would notice. Keep the two in sync by eye until
+// src/main.js has real coverage of its own.
+describe("swingWeapon's shared gate (mirrors src/main.js, see caveat above)", () => {
+  function makeSwingWeapon(state, enemies) {
+    const w = world(enemies);
+    return function swingWeapon(weapon) {
+      if (state.swing > 0) return;
+      state.swing = weapon.swingTime;
+      state.cooldown = weapon.cooldown;
+      const hits = swingMelee(w, weapon);
+      for (const hit of hits) {
+        if (hit.killed) state.kills = (state.kills ?? 0) + 1;
+      }
+      return hits;
+    };
+  }
+
+  it("F then the attack key lands exactly one swing's damage", () => {
+    const e = foe(5.6, 4.5);
+    const state = { swing: 0, cooldown: 0 };
+    const swingWeapon = makeSwingWeapon(state, [e]);
+    swingWeapon(WEAPONS.pipe); // F: quickMelee always swings the pipe
+    swingWeapon(WEAPONS.pipe); // attack key, pipe equipped
+    expect(e.hp).toBe(10 - WEAPONS.pipe.damage);
+  });
+
+  it("the attack key then F also lands exactly one swing's damage", () => {
+    const e = foe(5.6, 4.5);
+    const state = { swing: 0, cooldown: 0 };
+    const swingWeapon = makeSwingWeapon(state, [e]);
+    swingWeapon(WEAPONS.pipe); // attack key, pipe equipped
+    swingWeapon(WEAPONS.pipe); // F
+    expect(e.hp).toBe(10 - WEAPONS.pipe.damage);
+  });
+
+  it("F still swings while the equipped weapon's cooldown is running (panic melee)", () => {
+    const e = foe(5.6, 4.5);
+    // Simulates the pistol having just fired: its cooldown is nonzero, but
+    // that must never be what blocks quickMelee — only state.swing does.
+    const state = { swing: 0, cooldown: 999 };
+    const swingWeapon = makeSwingWeapon(state, [e]);
+    swingWeapon(WEAPONS.pipe);
+    expect(e.hp).toBe(10 - WEAPONS.pipe.damage);
+  });
 });
 
 // `castHitscan` requires a unit direction vector and deliberately does not
