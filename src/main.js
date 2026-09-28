@@ -2,8 +2,16 @@ import "./style.css";
 import { TEXTURE_SLOT, generateTextures, makeEnemySprite } from "./assets/textures.js";
 import { createInput, readMoveAxes } from "./core/input.js";
 import { createLoop } from "./core/loop.js";
+import { fireWeapon, swingMelee } from "./game/combat.js";
 import { parseMap } from "./game/map.js";
 import { createGameState, createHudBinding } from "./game/state.js";
+import {
+  WEAPONS,
+  WEAPON_SLOTS,
+  nextWeaponId,
+  weaponById,
+  weaponBySlot,
+} from "./game/weapons.js";
 import { renderFloorCeiling } from "./render/floors.js";
 import { createPresenter } from "./render/framebuffer.js";
 import { PALETTE, PALETTE_SIZE, SHADE_LEVELS, buildShadeTable, rgb } from "./render/palette.js";
@@ -34,15 +42,10 @@ const MAP_LINES = [
 const parsed = parseMap(MAP_LINES);
 const map = parsed.map;
 const FOV = Math.PI / 3;
-const MAG_SIZE = 8;
-const RELOAD_T = 0.85;
 const MOVE = 3.4;
 const ENEMY_SPEED = 0.85;
 const BITE = 10;
 const IFRAMES = 0.65;
-const SWING_T = 0.34;
-const STICK_RANGE = 1.45;
-const STICK_DMG = 2;
 // Phone look: bigger = faster turn. Try 0.02–0.05.
 const LOOK_PHONE = 0.028;
 const LOOK_DESK = 0.0045;
@@ -89,7 +92,16 @@ const input = createInput(canvas, {
   onReload: () => startReload(),
   onRestart: () => reset(),
   onSelectWeapon: (slot) => selectWeapon(slot),
-  onMelee: () => melee(),
+  // F is a standing quick-melee independent of whatever is equipped (see the
+  // hint text in index.html), the same way the old melee() worked: gated on
+  // state.swing alone, not on the equipped weapon's own state.cooldown.
+  onMelee: () => {
+    if (state.phase !== "play" || state.swing > 0) return;
+    const weapon = WEAPONS.pipe;
+    state.swing = weapon.swingTime;
+    applyHits(swingMelee(world(), weapon));
+    syncHud();
+  },
   isPlaying: () => state.phase === "play",
 });
 if (phone) input.bindStickPad(document.getElementById("stick"));
@@ -104,16 +116,12 @@ const enemyBitmap = makeEnemySprite(7);
 let presenter = null;
 let zbuf = new Float32Array(1);
 
-function blocked(ax, ay, bx, by) {
-  const dx = bx - ax;
-  const dy = by - ay;
-  const dist = Math.hypot(dx, dy);
-  const steps = Math.max(2, Math.ceil(dist / 0.08));
-  for (let i = 1; i < steps; i++) {
-    const t = i / steps;
-    if (map.isSolidAt(ax + dx * t, ay + dy * t)) return true;
-  }
-  return false;
+function currentWeapon() {
+  return weaponById(state.weapon) ?? WEAPONS[WEAPON_SLOTS[0]];
+}
+
+function world() {
+  return { map, enemies: state.enemies, player: state.player };
 }
 
 function reset() {
@@ -127,36 +135,30 @@ function reset() {
 }
 
 function syncHud() {
+  const weapon = currentWeapon();
   hud.sync({
     hp: `HP ${Math.max(0, Math.ceil(state.hp))}`,
     ammo:
-      state.weapon === "stick"
-        ? state.swing > 0
-          ? "SWING"
-          : "STICK"
+      weapon.kind === "melee"
+        ? weapon.name
         : state.reloading > 0
           ? "RELOAD"
-          : `AMMO ${state.mag}/${state.reserve}`,
+          : `${weapon.name} ${state.mag}/${state.reserve}`,
     kills: `KILLS ${state.kills}`,
   });
 }
 
 function swapWeapon() {
   if (state.phase !== "play") return;
-  state.weapon = state.weapon === "gun" ? "stick" : "gun";
+  state.weapon = nextWeaponId(state.weapon, 1);
   firing = false;
   syncHud();
 }
 
-// input.js only knows key codes, not the weapon roster, so it hands over a
-// raw 1-based slot number; unknown slots (anything but the two weapons this
-// phase has) are ignored. No phase guard: `state.weapon` is fully reset to
-// "gun" by state.reset() at the start of every play session, so a stray
-// press on the menu or death screen leaves nothing to clean up.
 function selectWeapon(slot) {
-  if (slot === 1) state.weapon = "gun";
-  else if (slot === 2) state.weapon = "stick";
-  else return;
+  const weapon = weaponBySlot(slot);
+  if (!weapon) return;
+  state.weapon = weapon.id;
   syncHud();
 }
 
@@ -165,72 +167,51 @@ function tryMove(nx, ny) {
   if (!map.isSolidAt(state.player.x, ny)) state.player.y = ny;
 }
 
-function startReload() {
-  if (
-    state.reloading > 0 ||
-    state.reserve <= 0 ||
-    state.mag >= MAG_SIZE ||
-    state.phase !== "play"
-  ) {
+function attack() {
+  if (state.phase !== "play") return;
+  const weapon = currentWeapon();
+  if (state.cooldown > 0) return;
+
+  if (weapon.kind === "melee") {
+    state.cooldown = weapon.cooldown;
+    state.swing = weapon.swingTime;
+    applyHits(swingMelee(world(), weapon), weapon);
+    syncHud();
     return;
   }
-  state.reloading = RELOAD_T;
-  syncHud();
-}
 
-function nearestFoe(maxDist, cone) {
-  const dirx = Math.cos(state.player.a);
-  const diry = Math.sin(state.player.a);
-  let best = null;
-  let bestD = maxDist;
-  for (const e of state.enemies) {
-    if (e.hp <= 0) continue;
-    const vx = e.x - state.player.x;
-    const vy = e.y - state.player.y;
-    const along = vx * dirx + vy * diry;
-    if (along < 0.15 || along > bestD) continue;
-    if (Math.abs(vx * diry - vy * dirx) > cone) continue;
-    if (blocked(state.player.x, state.player.y, e.x, e.y)) continue;
-    best = e;
-    bestD = along;
-  }
-  return best;
-}
-
-function shoot() {
-  if (state.phase !== "play" || state.cooldown > 0 || state.reloading > 0) return;
+  if (state.reloading > 0) return;
   if (state.mag <= 0) {
     startReload();
     return;
   }
   state.mag -= 1;
-  state.lightBoost = 0.35;
-  state.cooldown = 0.16;
-  const best = nearestFoe(8, 0.35);
-  if (best) {
-    best.hp -= 1;
-    best.hit = 0.15;
-    if (best.hp <= 0) state.kills += 1;
-  }
+  state.cooldown = weapon.cooldown;
+  state.lightBoost = weapon.lightBoost;
+  applyHits(fireWeapon(world(), weapon), weapon);
   if (state.mag <= 0) startReload();
   syncHud();
 }
 
-function melee() {
-  if (state.phase !== "play" || state.swing > 0) return;
-  state.swing = SWING_T;
-  const best = nearestFoe(STICK_RANGE, 0.55);
-  if (best) {
-    best.hp -= STICK_DMG;
-    best.hit = 0.2;
-    if (best.hp <= 0) state.kills += 1;
+function applyHits(hits) {
+  for (const hit of hits) {
+    if (hit.killed) state.kills += 1;
   }
-  syncHud();
 }
 
-function attack() {
-  if (state.weapon === "stick") melee();
-  else shoot();
+function startReload() {
+  const weapon = currentWeapon();
+  if (weapon.kind !== "hitscan") return;
+  if (
+    state.reloading > 0 ||
+    state.reserve <= 0 ||
+    state.mag >= weapon.magSize ||
+    state.phase !== "play"
+  ) {
+    return;
+  }
+  state.reloading = weapon.reloadTime;
+  syncHud();
 }
 
 function update(dt) {
@@ -243,8 +224,9 @@ function update(dt) {
   if (state.reloading > 0) {
     state.reloading -= dt;
     if (state.reloading <= 0) {
-      const need = MAG_SIZE - state.mag;
-      const take = Math.min(need, state.reserve);
+      const weapon = currentWeapon();
+      const need = (weapon.magSize ?? 0) - state.mag;
+      const take = Math.min(Math.max(0, need), state.reserve);
       state.mag += take;
       state.reserve -= take;
       state.reloading = 0;
@@ -347,7 +329,7 @@ function draw() {
   if (state.phase === "play") {
     renderWeapon(
       fb,
-      { weapon: state.weapon, cooldown: state.cooldown, swing: state.swing, swingTime: SWING_T },
+      { weapon: state.weapon, cooldown: state.cooldown, swing: state.swing, swingTime: currentWeapon().swingTime ?? 0.34 },
       { shadeTable, paletteSize: PALETTE_SIZE },
     );
     renderCrosshair(fb, shadeTable, PALETTE_SIZE);

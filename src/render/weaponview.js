@@ -117,7 +117,7 @@ function drawStick(fb, view, options) {
 }
 
 export function renderWeapon(fb, view, options) {
-  if (view.weapon === "stick" || view.swing > 0) drawStick(fb, view, options);
+  if (view.weapon === "pipe" || view.swing > 0) drawStick(fb, view, options);
   else drawGun(fb, view, options);
 }
 
