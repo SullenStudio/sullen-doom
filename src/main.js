@@ -3,7 +3,9 @@ import { TEXTURE_SLOT, generateTextures, makeEnemySprite } from "./assets/textur
 import { createInput, readMoveAxes } from "./core/input.js";
 import { createLoop } from "./core/loop.js";
 import { casingSpawn, fireWeapon, swingMelee } from "./game/combat.js";
+import { ENEMY_RADIUS } from "./game/hitscan.js";
 import { parseMap } from "./game/map.js";
+import { PLAYER_RADIUS, slideMove } from "./game/move.js";
 import { createParticles } from "./game/particles.js";
 import { createGameState, createHudBinding } from "./game/state.js";
 import {
@@ -159,8 +161,10 @@ function selectWeapon(slot) {
 }
 
 function tryMove(nx, ny) {
-  if (!map.isSolidAt(nx, state.player.y)) state.player.x = nx;
-  if (!map.isSolidAt(state.player.x, ny)) state.player.y = ny;
+  slideMove(map, state.player, nx, ny, {
+    blockers: state.enemies,
+    minDist: ENEMY_RADIUS + PLAYER_RADIUS,
+  });
 }
 
 /**
@@ -347,8 +351,7 @@ function update(dt) {
 }
 
 function tryEnemyMove(e, nx, ny) {
-  if (!map.isSolidAt(nx, e.y)) e.x = nx;
-  if (!map.isSolidAt(e.x, ny)) e.y = ny;
+  slideMove(map, e, nx, ny);
 }
 
 function die() {
