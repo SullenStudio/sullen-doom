@@ -92,16 +92,7 @@ const input = createInput(canvas, {
   onReload: () => startReload(),
   onRestart: () => reset(),
   onSelectWeapon: (slot) => selectWeapon(slot),
-  // F is a standing quick-melee independent of whatever is equipped (see the
-  // hint text in index.html), the same way the old melee() worked: gated on
-  // state.swing alone, not on the equipped weapon's own state.cooldown.
-  onMelee: () => {
-    if (state.phase !== "play" || state.swing > 0) return;
-    const weapon = WEAPONS.pipe;
-    state.swing = weapon.swingTime;
-    applyHits(swingMelee(world(), weapon));
-    syncHud();
-  },
+  onMelee: () => quickMelee(),
   isPlaying: () => state.phase === "play",
 });
 if (phone) input.bindStickPad(document.getElementById("stick"));
@@ -197,6 +188,18 @@ function applyHits(hits) {
   for (const hit of hits) {
     if (hit.killed) state.kills += 1;
   }
+}
+
+// The F key swings the pipe whatever is equipped — a panic melee. It is
+// gated on its own swing timer rather than the equipped weapon's cooldown,
+// so holstering a spent pistol is never the thing that stops you hitting
+// something.
+function quickMelee() {
+  if (state.phase !== "play" || state.swing > 0) return;
+  const pipe = WEAPONS.pipe;
+  state.swing = pipe.swingTime;
+  applyHits(swingMelee(world(), pipe), pipe);
+  syncHud();
 }
 
 function startReload() {
