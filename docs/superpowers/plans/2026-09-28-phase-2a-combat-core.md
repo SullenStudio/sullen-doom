@@ -1465,6 +1465,60 @@ describe("renderParticles", () => {
       .toBeGreaterThan(luma(scene((p) => place(p, 9.0, 2.5, 0.5))));
   });
 
+  it("clips a particle at a wall edge instead of drawing it whole", () => {
+    // A near wall covering only the left half of the screen. A particle
+    // straddling the edge must lose exactly the covered columns.
+    const fb = createFramebuffer(GAME_W, GAME_H);
+    fb.clear(0);
+    const zbuf = new Float32Array(GAME_W).fill(100);
+    const middle = GAME_W >> 1;
+    for (let x = 0; x < middle; x++) zbuf[x] = 0.5;
+    const particles = createParticles(8);
+    place(particles, 3.2, 2.5, 0.5);
+    renderParticles(fb, makeCamera(2.5, 2.5, 0, FOV), particles, {
+      shadeTable,
+      paletteSize: PALETTE_SIZE,
+      zbuf,
+      horizon: GAME_H >> 1,
+      lightBoost: 0,
+    });
+    let left = 0;
+    let right = 0;
+    for (let y = 0; y < GAME_H; y++) {
+      for (let x = 0; x < GAME_W; x++) {
+        if (fb.data[y * GAME_W + x] === 0) continue;
+        if (x < middle) left++;
+        else right++;
+      }
+    }
+    expect(left).toBe(0);
+    expect(right).toBeGreaterThan(0);
+  });
+
+  it("puts a floor-height particle exactly where a wall meets the floor", () => {
+    // Particles and sprites must share one vertical projection. If the two
+    // drift apart, blood floats above the ground or sinks into it, and the
+    // cause is invisible until someone measures it.
+    const depth = 3;
+    const fb = scene(
+      (p) => place(p, 2.5 + depth, 2.5, 0),
+      Infinity,
+      GAME_W,
+      GAME_H,
+    );
+    const expected = (GAME_H >> 1) + Math.round(GAME_H / (2 * depth));
+    let row = -1;
+    for (let y = 0; y < GAME_H && row < 0; y++) {
+      for (let x = 0; x < GAME_W; x++) {
+        if (fb.data[y * GAME_W + x] !== 0) {
+          row = y;
+          break;
+        }
+      }
+    }
+    expect(row).toBe(expected);
+  });
+
   it("never writes outside the buffer", () => {
     expect(() => scene((p) => place(p, 2.55, 2.5, 0.5))).not.toThrow();
     expect(() => scene((p) => place(p, 5.5, 2.5, 4))).not.toThrow();
@@ -1503,9 +1557,6 @@ export function renderParticles(fb, camera, particles, options) {
     if (!p) continue;
 
     const centreX = Math.round(p.screenX * width);
-    if (centreX < 0 || centreX >= width) continue;
-    if (p.depth >= zbuf[centreX]) continue;
-
     const centreY = Math.round(horizon + (height * (0.5 - q.z)) / p.depth);
     const size = Math.max(1, Math.round((height * 0.014) / p.depth));
     const half = size >> 1;
@@ -1522,9 +1573,12 @@ export function renderParticles(fb, camera, particles, options) {
     if (x0 >= x1 || y0 >= y1) continue;
 
     const color = shadeTable[lightLevel(p.depth, 0, lightBoost) * paletteSize + q.colorIndex];
-    for (let y = y0; y < y1; y++) {
-      const row = y * width;
-      for (let x = x0; x < x1; x++) data[row + x] = color;
+    // Depth-test per column, the way renderSprites does. Testing once at the
+    // centre would draw or drop the whole square, so a particle straddling a
+    // wall edge would spill past the silhouette.
+    for (let x = x0; x < x1; x++) {
+      if (p.depth >= zbuf[x]) continue;
+      for (let y = y0; y < y1; y++) data[y * width + x] = color;
     }
   }
 }
