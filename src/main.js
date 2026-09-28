@@ -1,9 +1,11 @@
 import "./style.css";
+import { loadGunSprites } from "./assets/gunsprites.js";
 import { TEXTURE_SLOT, generateTextures, makeEnemySprite } from "./assets/textures.js";
 import { createInput, readMoveAxes } from "./core/input.js";
 import { createLoop } from "./core/loop.js";
 import { casingSpawn, fireWeapon, swingMelee } from "./game/combat.js";
 import { ENEMY_RADIUS } from "./game/hitscan.js";
+import { LEVELS, nextLevelIndex } from "./game/levels.js";
 import { parseMap } from "./game/map.js";
 import { PLAYER_RADIUS, separateBodies, slideMove } from "./game/move.js";
 import { createParticles } from "./game/particles.js";
@@ -27,29 +29,9 @@ import { renderSprites } from "./render/sprites.js";
 import { renderWalls } from "./render/walls.js";
 import { renderCrosshair, renderFlash, renderWeapon } from "./render/weaponview.js";
 
-const MAP_LINES = [
-  "##################",
-  "#................#",
-  "#..E....22....E..#",
-  "#................#",
-  "#......####......#",
-  "#..E..........E..#",
-  "#................#",
-  "##....E....E....##",
-  "#................#",
-  "#........P.......#",
-  "#................#",
-  "##....E....E....##",
-  "#................#",
-  "#..E..........E..#",
-  "#......####......#",
-  "#................#",
-  "#..E....55....E..#",
-  "##################",
-];
-
-const parsed = parseMap(MAP_LINES);
-const map = parsed.map;
+let levelIndex = 0;
+let parsed = parseMap(LEVELS[0].lines);
+let map = parsed.map;
 const FOV = Math.PI / 3;
 const MOVE = 3.4;
 const ENEMY_SPEED = 0.85;
@@ -73,7 +55,11 @@ const ctx = canvas.getContext("2d");
 const overlay = document.getElementById("overlay");
 const playBtn = document.getElementById("btn-play");
 const hpEl = document.getElementById("hp");
+const hpBlockEl = document.getElementById("hp-block");
 const ammoEl = document.getElementById("ammo");
+const ammoResEl = document.getElementById("ammo-res");
+const weaponLabelEl = document.getElementById("weapon-label");
+const levelNameEl = document.getElementById("level-name");
 const killEl = document.getElementById("kills");
 
 // Captured once at load so reset() can restore the menu after die() has
@@ -89,7 +75,15 @@ const MENU_PLAY_LABEL = playBtn.textContent;
 let firing = false;
 
 const state = createGameState(parsed);
-const hud = createHudBinding({ hp: hpEl, ammo: ammoEl, kills: killEl });
+const hud = createHudBinding({
+  hp: hpEl,
+  hpBlock: hpBlockEl,
+  ammo: ammoEl,
+  ammoRes: ammoResEl,
+  weaponLabel: weaponLabelEl,
+  levelName: levelNameEl,
+  kills: killEl,
+});
 
 const input = createInput(canvas, {
   phone,
@@ -99,7 +93,7 @@ const input = createInput(canvas, {
   onAttack: () => attack(),
   onSwap: () => swapWeapon(),
   onReload: () => startReload(),
-  onRestart: () => reset(),
+  onRestart: () => onPlay(),
   onSelectWeapon: (slot) => selectWeapon(slot),
   onMelee: () => quickMelee(),
   isPlaying: () => state.phase === "play",
@@ -116,6 +110,14 @@ const particles = createParticles(192);
 
 let presenter = null;
 let zbuf = new Float32Array(1);
+let gunSprites = null;
+const gunsReady = loadGunSprites()
+  .then((sprites) => {
+    gunSprites = sprites;
+  })
+  .catch((err) => {
+    console.warn(err);
+  });
 
 function currentWeapon() {
   return weaponById(state.weapon) ?? WEAPONS[WEAPON_SLOTS[0]];
@@ -125,28 +127,81 @@ function world() {
   return { map, enemies: state.enemies, player: state.player };
 }
 
-function reset() {
-  state.reset();
+function applyLevel(index, { keepLoadout, hp } = {}) {
+  levelIndex = index;
+  parsed = parseMap(LEVELS[index].lines);
+  map = parsed.map;
+  state.enter(parsed, { keepLoadout: !!keepLoadout });
+  if (hp != null) state.hp = hp;
   particles.clear();
   firing = false;
+}
+
+function hideOverlay() {
+  overlay.classList.add("hidden");
   overlayTitle.textContent = MENU_TITLE;
   overlaySub.textContent = MENU_SUB;
   playBtn.textContent = MENU_PLAY_LABEL;
-  overlay.classList.add("hidden");
+}
+
+function showOverlay(title, sub, button) {
+  overlayTitle.textContent = title;
+  overlaySub.textContent = sub;
+  playBtn.textContent = button;
+  overlay.classList.remove("hidden");
+  if (document.pointerLockElement) document.exitPointerLock();
+}
+
+function startCampaign() {
+  applyLevel(0, { keepLoadout: false });
+  hideOverlay();
   syncHud();
+}
+
+function onPlay() {
+  if (state.phase === "clear") {
+    const next = nextLevelIndex(levelIndex, LEVELS.length);
+    if (next == null) {
+      startCampaign();
+      return;
+    }
+    applyLevel(next, { keepLoadout: true });
+    hideOverlay();
+    syncHud();
+    return;
+  }
+  if (state.phase === "over") {
+    applyLevel(levelIndex, { keepLoadout: true, hp: 100 });
+    hideOverlay();
+    syncHud();
+    return;
+  }
+  startCampaign();
+}
+
+function completeLevel() {
+  const next = nextLevelIndex(levelIndex, LEVELS.length);
+  if (next == null) {
+    state.phase = "win";
+    showOverlay("YOU DESCENDED", `kills ${state.kills}`, "AGAIN");
+    return;
+  }
+  state.phase = "clear";
+  showOverlay(LEVELS[levelIndex].name, `kills ${state.kills} · map clear`, "NEXT");
 }
 
 function syncHud() {
   const weapon = currentWeapon();
+  const hp = Math.max(0, Math.ceil(state.hp));
+  const reloading = state.reloading > 0 && state.reloadId === weapon.id;
   hud.sync({
-    hp: `HP ${Math.max(0, Math.ceil(state.hp))}`,
-    ammo:
-      weapon.kind === "melee"
-        ? weapon.name
-        : state.reloading > 0 && state.reloadId === weapon.id
-          ? "RELOAD"
-          : `${weapon.name} ${magOf(state.mags, weapon)}/${reserveOf(state.reserves, weapon)}`,
-    kills: `KILLS ${state.kills}`,
+    hp: String(hp),
+    hpTone: hp <= 20 ? "crit" : hp <= 50 ? "warn" : "ok",
+    ammo: weapon.kind === "melee" ? "—" : reloading ? "R" : String(magOf(state.mags, weapon)),
+    ammoRes: weapon.kind === "melee" ? weapon.name : String(reserveOf(state.reserves, weapon)),
+    weaponLabel: weapon.name,
+    levelName: LEVELS[levelIndex].name,
+    kills: String(state.kills),
   });
 }
 
@@ -339,6 +394,10 @@ function update(dt) {
     state.player.x + (fx * move.y + rx * move.x) * speed * dt,
     state.player.y + (fy * move.y + ry * move.x) * speed * dt,
   );
+  if (map.isExitAt(state.player.x, state.player.y)) {
+    completeLevel();
+    return;
+  }
   if (input.firing || firing) attack();
 
   for (const e of state.enemies) {
@@ -374,11 +433,7 @@ function die() {
   state.phase = "over";
   const best = Math.max(state.kills, Number(localStorage.getItem(BEST_KEY) || 0));
   localStorage.setItem(BEST_KEY, String(best));
-  overlay.classList.remove("hidden");
-  overlayTitle.textContent = "YOU DIED";
-  overlaySub.textContent = `kills ${state.kills}   best ${best}`;
-  playBtn.textContent = "AGAIN";
-  if (document.pointerLockElement) document.exitPointerLock();
+  showOverlay("YOU DIED", `kills ${state.kills}   best ${best}`, "AGAIN");
 }
 
 function draw() {
@@ -434,8 +489,15 @@ function draw() {
   if (state.phase === "play") {
     renderWeapon(
       fb,
-      { weapon: state.weapon, cooldown: state.cooldown, swing: state.swing, swingTime: currentWeapon().swingTime ?? 0.34 },
-      { shadeTable, paletteSize: PALETTE_SIZE },
+      {
+        weapon: state.weapon,
+        cooldown: state.cooldown,
+        swing: state.swing,
+        swingTime: currentWeapon().swingTime ?? 0.34,
+        reloading: state.reloadId === state.weapon ? state.reloading : 0,
+        reloadTime: currentWeapon().reloadTime ?? 1,
+      },
+      { shadeTable, paletteSize: PALETTE_SIZE, sprites: gunSprites },
     );
     renderCrosshair(fb, shadeTable, PALETTE_SIZE, state.hitMark);
   }
@@ -470,7 +532,7 @@ function resize() {
   }
 }
 
-playBtn.addEventListener("click", () => reset());
+playBtn.addEventListener("click", () => onPlay());
 
 document.getElementById("btn-swap").addEventListener("pointerdown", (e) => {
   e.preventDefault();
@@ -492,4 +554,5 @@ document.getElementById("btn-fire").addEventListener("pointercancel", () => {
 
 resize();
 window.addEventListener("resize", resize);
+syncHud();
 createLoop({ update, render: draw }).start();

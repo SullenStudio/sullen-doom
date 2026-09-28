@@ -19,11 +19,25 @@ function freshLoadout() {
   };
 }
 
+function combatIdle(state) {
+  state.reloading = 0;
+  state.reloadId = null;
+  state.heat = 0;
+  state.cooldown = 0;
+  state.hurt = 0;
+  state.iframes = 0;
+  state.swing = 0;
+  state.lightBoost = 0;
+  state.hitMark = 0;
+  state.shake = 0;
+}
+
 /**
  * All mutable match state in one place, so `main.js` can go back to being
  * wiring instead of a pile of module-level variables.
  */
 export function createGameState(parsed) {
+  const home = parsed;
   const loadout = freshLoadout();
   const state = {
     player: {
@@ -48,31 +62,26 @@ export function createGameState(parsed) {
     shake: 0,
     weapon: "pistol",
     phase: "menu",
-    reset() {
-      const next = freshLoadout();
+    enter(next, { keepLoadout = false } = {}) {
       state.player = {
-        x: parsed.playerStart.x,
-        y: parsed.playerStart.y,
-        a: parsed.playerStart.angle,
+        x: next.playerStart.x,
+        y: next.playerStart.y,
+        a: next.playerStart.angle,
       };
-      // Fresh objects every time: reusing them would carry damage across.
-      state.enemies = spawnEnemies(parsed);
-      state.hp = START_HP;
-      state.mags = next.mags;
-      state.reserves = next.reserves;
-      state.reloading = 0;
-      state.reloadId = null;
-      state.heat = 0;
-      state.kills = 0;
-      state.cooldown = 0;
-      state.hurt = 0;
-      state.iframes = 0;
-      state.swing = 0;
-      state.lightBoost = 0;
-      state.hitMark = 0;
-      state.shake = 0;
-      state.weapon = "pistol";
+      state.enemies = spawnEnemies(next);
+      combatIdle(state);
+      if (!keepLoadout) {
+        const pack = freshLoadout();
+        state.hp = START_HP;
+        state.mags = pack.mags;
+        state.reserves = pack.reserves;
+        state.kills = 0;
+        state.weapon = "pistol";
+      }
       state.phase = "play";
+    },
+    reset() {
+      state.enter(home, { keepLoadout: false });
     },
   };
 
@@ -84,10 +93,18 @@ export function createGameState(parsed) {
  * DOM nodes sixty times a second to say the same thing.
  */
 export function createHudBinding(elements) {
-  const shown = { hp: null, ammo: null, kills: null };
+  const shown = {};
   return {
     sync(values) {
-      for (const key of ["hp", "ammo", "kills"]) {
+      if (elements.hpBlock && "hpTone" in values) {
+        if (shown.hpTone !== values.hpTone) {
+          shown.hpTone = values.hpTone;
+          elements.hpBlock.dataset.tone = values.hpTone;
+        }
+      }
+      for (const key of Object.keys(elements)) {
+        if (key === "hpBlock") continue;
+        if (!(key in values)) continue;
         if (shown[key] === values[key]) continue;
         shown[key] = values[key];
         elements[key].textContent = values[key];

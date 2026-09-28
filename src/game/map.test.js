@@ -73,4 +73,12 @@ describe("parseMap", () => {
     const { enemySpawns } = parseMap(LINES);
     expect(enemySpawns).toEqual([{ x: 2.5, y: 2.5 }]);
   });
+
+  it("treats X as a walkable exit, not a wall", () => {
+    const { map, exits } = parseMap(["#####", "#P.X#", "#####"]);
+    expect(map.isSolidAt(3.5, 1.5)).toBe(false);
+    expect(map.isExitAt(3.5, 1.5)).toBe(true);
+    expect(map.isExitAt(2.5, 1.5)).toBe(false);
+    expect(exits).toEqual([{ x: 3.5, y: 1.5 }]);
+  });
 });

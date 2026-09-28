@@ -152,4 +152,10 @@ describe("ammo", () => {
     expect(reserves[AMMO_BULLETS]).toBeGreaterThan(0);
     expect(reserves[AMMO_SHELLS]).toBeGreaterThan(0);
   });
+
+  it("makes a full reload take long enough to feel like a magazine change", () => {
+    expect(WEAPONS.pistol.reloadTime).toBeGreaterThanOrEqual(1.8);
+    expect(WEAPONS.shotgun.reloadTime).toBeGreaterThan(WEAPONS.pistol.reloadTime);
+    expect(WEAPONS.chaingun.reloadTime).toBeGreaterThan(WEAPONS.shotgun.reloadTime);
+  });
 });

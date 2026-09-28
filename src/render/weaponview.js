@@ -1,124 +1,123 @@
-import { ACCENT, RAMP, SHADE_LEVELS, rgb } from "./palette.js";
-
-// First-person weapon art, drawn straight into the pixel buffer so it
-// matches the chunky resolution of the world instead of sitting on top of it
-// as smooth vector shapes. Phase 2 replaces these blocks with real sprites.
-//
-// Geometry is expressed as fractions of a bounding box anchored to the
-// bottom-right of the screen (with a margin), not as fixed pixel offsets.
-// The internal buffer is always 480 wide but its height varies with the
-// window's aspect ratio (see resize() in main.js), so any layout that mixes
-// width-scaled and height-scaled offsets breaks at some aspect ratio. Every
-// part below is placed in the same box, so it scales uniformly.
+import { spriteForView } from "../assets/gunsprites.js";
+import { MUZZLE_FLASH, VIEWMODELS } from "../assets/viewmodels.js";
+import { blitIndexed, blitRgba } from "./blit.js";
+import { ACCENT, SHADE_LEVELS, rgb } from "./palette.js";
 
 const FULL = SHADE_LEVELS - 1;
-
-// Margin kept clear around the weapon so nothing — including the muzzle
-// flash at its largest — ever touches the screen edge.
-const MARGIN_X_FRAC = 0.04;
 const MARGIN_BOTTOM_FRAC = 0.05;
-
-function shade(options, index) {
-  return options.shadeTable[FULL * options.paletteSize + index];
-}
-
-/**
- * Maps a part's fractional coordinates within a bounding box to pixel
- * coordinates. `x0/x1` run left-to-right across the box (0..1); `y0/y1` run
- * bottom-to-top from the box's baseline (0 = baseline, 1 = top of box).
- */
-function boxRect(originX, baseY, boxW, boxH, x0, y0, x1, y1) {
-  const px = Math.round(originX + x0 * boxW);
-  const py = Math.round(baseY - y1 * boxH);
-  const pw = Math.round((x1 - x0) * boxW);
-  const ph = Math.round((y1 - y0) * boxH);
-  return [px, py, pw, ph];
-}
-
-// Gun bounding box. Slightly right of screen centre and low enough that even
-// the muzzle flash stays below the horizon.
-const GUN_WIDTH_FRAC = 0.3;
-const GUN_HEIGHT_FRAC = 0.36;
-const GUN_CENTRE_FRAC = 0.54;
 const GUN_KICK_FRAC = 0.02;
 
-function drawGun(fb, view, options) {
+const LAYOUT = {
+  pistol: { widthFrac: 0.3, heightFrac: 0.36, centre: 0.54 },
+  shotgun: { widthFrac: 0.44, heightFrac: 0.34, centre: 0.5 },
+  chaingun: { widthFrac: 0.4, heightFrac: 0.42, centre: 0.52 },
+  pipe: { widthFrac: 0.16, heightFrac: 0.46, anchor: "right" },
+};
+
+const SPRITE_LAYOUT = {
+  pistol: { widthFrac: 0.4, heightFrac: 0.42, centre: 0.62, hangFrac: 0.7 },
+  shotgun: { widthFrac: 0.5, heightFrac: 0.42, centre: 0.55, hangFrac: 0.78 },
+  chaingun: { widthFrac: 0.7, heightFrac: 0.38, centre: 0.5, hangFrac: 0.95 },
+  pipe: { widthFrac: 0.32, heightFrac: 0.5, anchor: "right", hangFrac: 0.68 },
+};
+
+function colorAt(options) {
+  return (index) => options.shadeTable[FULL * options.paletteSize + index];
+}
+
+function placeWeapon(fb, layout, w, h, view) {
   const { width, height } = fb;
-  const marginBottom = height * MARGIN_BOTTOM_FRAC;
-  const boxW = width * GUN_WIDTH_FRAC;
-  const boxH = height * GUN_HEIGHT_FRAC;
-  const kick = view.cooldown > 0 ? height * GUN_KICK_FRAC : 0;
-
-  const originX = width * GUN_CENTRE_FRAC - boxW / 2;
-  const baseY = height - marginBottom + kick;
-
-  const part = (x0, y0, x1, y1, colorIndex) => {
-    const [px, py, pw, ph] = boxRect(originX, baseY, boxW, boxH, x0, y0, x1, y1);
-    fb.fillRect(px, py, pw, ph, shade(options, colorIndex));
+  const marginBottom = Math.round(height * MARGIN_BOTTOM_FRAC);
+  if (layout.anchor === "right") {
+    const t = view.swing > 0 && view.swingTime > 0 ? 1 - view.swing / view.swingTime : 0;
+    const swingPhase = view.swing > 0 ? Math.sin(t * Math.PI) : 0;
+    return {
+      destX: width - Math.round(width * 0.04) - w - Math.round(swingPhase * width * 0.08),
+      destY: height - marginBottom - h - Math.round(swingPhase * height * 0.1),
+    };
+  }
+  const kick = view.cooldown > 0 ? Math.round(height * GUN_KICK_FRAC) : 0;
+  return {
+    destX: Math.round(width * layout.centre - w / 2),
+    destY: height - marginBottom - h + kick,
   };
+}
 
-  // The weapon is seen from BEHIND, not from the side: the player is looking
-  // down its length, so it is built bottom-to-top and narrows as it recedes.
-  // Laying the parts out left-to-right instead would draw a catalogue-style
-  // side profile, which reads as a gun aimed across the screen rather than
-  // into it.
-  //
-  // Each part overlaps the one below so the silhouette stays connected.
-  part(0.04, 0.0, 0.96, 0.3, RAMP.rust + 1); // hands on the grip, nearest
-  part(0.12, 0.05, 0.88, 0.16, RAMP.rust + 3); // lit top edge of the grip
-  part(0.2, 0.26, 0.8, 0.56, RAMP.concrete + 2); // receiver
-  part(0.28, 0.5, 0.72, 0.72, RAMP.concrete + 3); // slide, catching the light
-  part(0.42, 0.66, 0.58, 0.9, RAMP.concrete + 1); // barrel, receding
-  part(0.38, 0.86, 0.62, 0.95, RAMP.concrete + 0); // muzzle ring
+function placeSprite(fb, layout, w, h, view) {
+  const { width, height } = fb;
+  const hang = layout.hangFrac ?? 0.72;
+  const minY = height >> 1;
+  if (layout.anchor === "right") {
+    const t = view.swing > 0 && view.swingTime > 0 ? 1 - view.swing / view.swingTime : 0;
+    const swingPhase = view.swing > 0 ? Math.sin(t * Math.PI) : 0;
+    return {
+      destX: width - Math.round(width * 0.04) - w - Math.round(swingPhase * width * 0.06),
+      destY: Math.max(minY, height - Math.round(h * hang) - Math.round(swingPhase * height * 0.06)),
+    };
+  }
+  const kick = view.cooldown > 0 ? Math.round(height * GUN_KICK_FRAC) : 0;
+  return {
+    destX: Math.max(0, Math.round(width * layout.centre - w / 2)),
+    destY: Math.max(minY, height - Math.round(h * hang) + kick),
+  };
+}
 
-  if (view.cooldown > 0.08) {
-    // The flash blooms around the muzzle, symmetric about the barrel rather
-    // than trailing off to one side. Built as a cross of a wide low burst
-    // and a narrow spike so it reads as a flash rather than a solid bar.
-    part(0.3, 0.88, 0.7, 0.96, ACCENT.gold);
-    part(0.42, 0.9, 0.58, 1.0, ACCENT.goldLight);
-    part(0.36, 0.91, 0.64, 0.97, ACCENT.goldLight);
+function fittedSpriteSize(fb, sprite, layout) {
+  const maxW = Math.max(1, Math.round(fb.width * layout.widthFrac));
+  const maxH = Math.max(1, Math.round(fb.height * layout.heightFrac));
+  // Whole-number scale only, and never taller than heightFrac — 2x on a
+  // 270-tall buffer swallowed the whole view and hid enemies behind the gun.
+  let s = 1;
+  while ((s + 1) * sprite.width <= maxW && (s + 1) * sprite.height <= maxH) {
+    s++;
+  }
+  return { w: sprite.width * s, h: sprite.height * s };
+}
+
+function drawSpriteView(fb, view, id, sprite) {
+  const layout = SPRITE_LAYOUT[id] ?? SPRITE_LAYOUT.pistol;
+  const { w, h } = fittedSpriteSize(fb, sprite, layout);
+  const { destX, destY } = placeSprite(fb, layout, w, h, view);
+  blitRgba(fb, sprite, destX, destY, w, h);
+}
+
+function drawViewmodel(fb, view, options, id) {
+  const bmp = VIEWMODELS[id];
+  const layout = LAYOUT[id];
+  const sx = Math.max(1, Math.round((fb.width * layout.widthFrac) / bmp.width));
+  const sy = Math.max(1, Math.round((fb.height * layout.heightFrac) / bmp.height));
+  const w = bmp.width * sx;
+  const h = bmp.height * sy;
+  const { destX, destY } = placeWeapon(fb, layout, w, h, view);
+
+  const paint = colorAt(options);
+  blitIndexed(fb, bmp, destX, destY, sx, sy, paint);
+
+  const flashCut = id === "chaingun" ? 0.03 : 0.08;
+  if (id !== "pipe" && view.cooldown > flashCut) {
+    const fw = MUZZLE_FLASH.width * sx;
+    blitIndexed(
+      fb,
+      MUZZLE_FLASH,
+      destX + Math.round((w - fw) / 2),
+      destY - sy,
+      sx,
+      sy,
+      paint,
+    );
   }
 }
 
-// Stick bounding box: narrower than the gun, anchored the same way, but
-// taller since the melee weapon is held more upright.
-const STICK_WIDTH_FRAC = 0.16;
-const STICK_HEIGHT_FRAC = 0.46;
-const STICK_SLIDE_FRAC = 0.08;
-const STICK_LIFT_FRAC = 0.1;
-
-function drawStick(fb, view, options) {
-  const { width, height } = fb;
-  const marginX = width * MARGIN_X_FRAC;
-  const marginBottom = height * MARGIN_BOTTOM_FRAC;
-  const boxW = width * STICK_WIDTH_FRAC;
-  const boxH = height * STICK_HEIGHT_FRAC;
-
-  const t = view.swing > 0 ? 1 - view.swing / view.swingTime : 0;
-  const swingPhase = view.swing > 0 ? Math.sin(t * Math.PI) : 0;
-  const slide = swingPhase * width * STICK_SLIDE_FRAC;
-  const lift = swingPhase * height * STICK_LIFT_FRAC;
-
-  const originX = width - marginX - boxW - slide;
-  const baseY = height - marginBottom - lift;
-
-  const part = (x0, y0, x1, y1, colorIndex) => {
-    const [px, py, pw, ph] = boxRect(originX, baseY, boxW, boxH, x0, y0, x1, y1);
-    fb.fillRect(px, py, pw, ph, shade(options, colorIndex));
-  };
-
-  // Shaft (two overlapping strips for a lit/shadowed edge), then a knotted
-  // head overlapping the top of the shaft.
-  part(0.3, 0.0, 0.62, 0.82, RAMP.rust + 0);
-  part(0.38, 0.04, 0.54, 0.8, RAMP.rust + 2);
-  part(0.06, 0.78, 0.96, 1.0, RAMP.concrete + 1);
-  part(0.06, 0.94, 0.96, 1.0, RAMP.bone + 3);
-}
-
 export function renderWeapon(fb, view, options) {
-  if (view.weapon === "pipe" || view.swing > 0) drawStick(fb, view, options);
-  else drawGun(fb, view, options);
+  const overlay = spriteForView(options.sprites, view);
+  if (overlay) {
+    drawSpriteView(fb, view, overlay.id, overlay.sprite);
+    return;
+  }
+  if (view.weapon === "pipe" || view.swing > 0) drawViewmodel(fb, view, options, "pipe");
+  else if (view.weapon === "shotgun") drawViewmodel(fb, view, options, "shotgun");
+  else if (view.weapon === "chaingun") drawViewmodel(fb, view, options, "chaingun");
+  else drawViewmodel(fb, view, options, "pistol");
 }
 
 /**
@@ -138,14 +137,10 @@ export function renderCrosshair(fb, shadeTable, paletteSize, hitMark = 0) {
   fb.fillRect(cx, cy + gap, 1, arm, color);
   fb.fillRect(cx - arm - gap, cy, arm, 1, color);
   fb.fillRect(cx + gap, cy, arm, 1, color);
-  // The four arms leave a gap around the centre by design; mark the exact
-  // centre pixel too so aim always has a precise point of reference.
   fb.fillRect(cx, cy, 1, 1, color);
 
   if (hitMark <= 0) return;
 
-  // Four ticks stepping outwards diagonally, drawn a pixel at a time so the
-  // mark reads as a burst rather than a box.
   const markColor = shadeTable[FULL * paletteSize + ACCENT.blood];
   const reach = Math.max(2, Math.round(arm * 0.9));
   const start = gap + 1;

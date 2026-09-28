@@ -17,8 +17,9 @@ function shove(map, enemy, dx, dy) {
  * Casts one ray and applies its damage. Returns a record of what happened,
  * or null if the ray reached nothing worth reporting.
  *
- * `alreadyHit` lets a multi-ray attack — a melee sweep — damage each enemy
- * at most once.
+ * `alreadyHit` lets a melee sweep damage each enemy at most once.
+ * Hitscan pellets do not use it: a shotgun is supposed to stack every
+ * pellet that lands on the same body.
  */
 function resolveRay(world, weapon, angle, alreadyHit) {
   const dirX = Math.cos(angle);
@@ -33,7 +34,7 @@ function resolveRay(world, weapon, angle, alreadyHit) {
     weapon.range,
   );
   if (shot.kind === "none") return null;
-  if (shot.kind === "enemy" && alreadyHit.has(shot.enemy)) return null;
+  if (alreadyHit && shot.kind === "enemy" && alreadyHit.has(shot.enemy)) return null;
 
   const record = {
     kind: shot.kind,
@@ -47,7 +48,7 @@ function resolveRay(world, weapon, angle, alreadyHit) {
   };
 
   if (shot.kind === "enemy") {
-    alreadyHit.add(shot.enemy);
+    alreadyHit?.add(shot.enemy);
     shot.enemy.hp -= weapon.damage;
     shot.enemy.hit = HIT_FLASH_T;
     shove(world.map, shot.enemy, dirX * weapon.knockback, dirY * weapon.knockback);
@@ -64,11 +65,10 @@ function resolveRay(world, weapon, angle, alreadyHit) {
  */
 export function fireWeapon(world, weapon, random = Math.random) {
   const hits = [];
-  const alreadyHit = new Set();
   const pellets = weapon.pellets ?? 1;
   for (let i = 0; i < pellets; i++) {
     const jitter = weapon.spread ? (random() * 2 - 1) * weapon.spread : 0;
-    const record = resolveRay(world, weapon, world.player.a + jitter, alreadyHit);
+    const record = resolveRay(world, weapon, world.player.a + jitter);
     if (record) hits.push(record);
   }
   return hits;

@@ -13,16 +13,28 @@
     <div id="app">
       <canvas id="view"></canvas>
       <div id="hud">
-        <span id="hp">HP 100</span>
-        <span id="ammo">AMMO 40</span>
-        <span id="kills">KILLS 0</span>
+        <div id="hp-block" data-tone="ok">
+          <span id="hp-icon" aria-hidden="true">+</span>
+          <span id="hp">100</span>
+        </div>
+        <div id="hud-center">
+          <span id="level-name">INTAKE</span>
+          <span id="kills">0</span>
+        </div>
+        <div id="ammo-block">
+          <span id="weapon-label">PISTOL</span>
+          <div id="ammo-row">
+            <span id="ammo">8</span>
+            <span id="ammo-res">40</span>
+          </div>
+        </div>
       </div>
       <div id="overlay">
         <p class="mark">SULLEN STUDIO</p>
         <h1>SULLEN DESCENT</h1>
         <p>a cramped corridor shooter</p>
         <button type="button" id="btn-play">DESCEND</button>
-        <p class="hint">WASD move · mouse look · click fire · 1-4 or Q swap · F melee · R reload · Esc frees cursor</p>
+        <p class="hint">WASD move · mouse look · click fire · 1-4 or Q swap · F melee · R reload · find the exit</p>
       </div>
       <div id="mobile-ui">
         <div id="stick"></div>

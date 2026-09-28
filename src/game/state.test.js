@@ -61,6 +61,36 @@ describe("createGameState", () => {
     s.reset();
     expect(s.enemies[0]).not.toBe(first);
   });
+
+  it("keeps the loadout when entering another map", () => {
+    const s = createGameState(parsed);
+    s.reset();
+    s.hp = 41;
+    s.mags.pistol = 2;
+    s.weapon = "shotgun";
+    s.kills = 3;
+    const next = parseMap(["#####", "#P..#", "#..X#", "#####"]);
+    s.enter(next, { keepLoadout: true });
+    expect(s.hp).toBe(41);
+    expect(s.mags.pistol).toBe(2);
+    expect(s.weapon).toBe("shotgun");
+    expect(s.kills).toBe(3);
+    expect(s.player.x).toBe(1.5);
+    expect(s.enemies).toHaveLength(0);
+  });
+
+  it("restores a full loadout when not keeping it", () => {
+    const s = createGameState(parsed);
+    s.reset();
+    s.hp = 10;
+    s.mags.pistol = 1;
+    const next = parseMap(["#####", "#P..#", "#####"]);
+    s.enter(next, { keepLoadout: false });
+    expect(s.hp).toBe(100);
+    expect(s.mags.pistol).toBeGreaterThan(1);
+    expect(s.weapon).toBe("pistol");
+    expect(s.kills).toBe(0);
+  });
 });
 
 describe("createHudBinding", () => {

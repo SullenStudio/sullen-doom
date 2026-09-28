@@ -85,6 +85,13 @@ describe("fireWeapon", () => {
     expect(hits[0].killed).toBe(false);
   });
 
+  it("lets every shotgun pellet damage the same enemy", () => {
+    const e = foe(7, 4.5, 99);
+    const hits = fireWeapon(world([e]), WEAPONS.shotgun, () => 0.5);
+    expect(hits.filter((h) => h.kind === "enemy")).toHaveLength(WEAPONS.shotgun.pellets);
+    expect(e.hp).toBe(99 - WEAPONS.shotgun.pellets * WEAPONS.shotgun.damage);
+  });
+
   it("fires the shotgun's seven pellets", () => {
     const hits = fireWeapon(world([]), WEAPONS.shotgun, () => 0.5);
     expect(hits).toHaveLength(WEAPONS.shotgun.pellets);

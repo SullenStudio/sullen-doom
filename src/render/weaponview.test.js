@@ -107,6 +107,30 @@ describe("renderWeapon", () => {
     expect([...gun.data]).not.toEqual([...stick.data]);
   });
 
+  it("draws a different silhouette for each firearm", () => {
+    const pistol = blank();
+    const shotgun = blank();
+    const chaingun = blank();
+    const view = { cooldown: 0, swing: 0, swingTime: 0.34 };
+    renderWeapon(pistol, { ...view, weapon: "pistol" }, OPTS);
+    renderWeapon(shotgun, { ...view, weapon: "shotgun" }, OPTS);
+    renderWeapon(chaingun, { ...view, weapon: "chaingun" }, OPTS);
+    expect([...pistol.data]).not.toEqual([...shotgun.data]);
+    expect([...shotgun.data]).not.toEqual([...chaingun.data]);
+    expect([...pistol.data]).not.toEqual([...chaingun.data]);
+  });
+
+  it("makes the shotgun wider than the pistol", () => {
+    const pistol = blank();
+    const shotgun = blank();
+    const view = { cooldown: 0, swing: 0, swingTime: 0.34 };
+    renderWeapon(pistol, { ...view, weapon: "pistol" }, OPTS);
+    renderWeapon(shotgun, { ...view, weapon: "shotgun" }, OPTS);
+    const pistolW = boundingBox(pistol).maxX - boundingBox(pistol).minX;
+    const shotgunW = boundingBox(shotgun).maxX - boundingBox(shotgun).minX;
+    expect(shotgunW).toBeGreaterThan(pistolW);
+  });
+
   it("kicks the gun when it has just fired", () => {
     const calm = blank();
     const fired = blank();
@@ -188,6 +212,62 @@ describe("renderWeapon", () => {
       renderWeapon(fb, { weapon: "pistol", cooldown: 0.12, swing: 0, swingTime: 0.34 }, OPTS);
       expect(isSingleConnectedRegion(fb)).toBe(true);
     }
+  });
+
+  it("uses the overlay sprite instead of the indexed gun when sprites are present", () => {
+    const indexed = blank();
+    const overlaid = blank();
+    const view = { weapon: "pistol", cooldown: 0, swing: 0, swingTime: 0.34 };
+    renderWeapon(indexed, view, OPTS);
+    const rgba = new Uint8ClampedArray(8 * 8 * 4);
+    for (let i = 0; i < 64; i++) {
+      rgba[i * 4] = 255;
+      rgba[i * 4 + 3] = 255;
+    }
+    const red = { width: 8, height: 8, rgba };
+    renderWeapon(overlaid, view, { ...OPTS, sprites: { pistol: { idle: red, fire: red } } });
+    expect([...overlaid.data]).not.toEqual([...indexed.data]);
+    expect(painted(overlaid)).toBeGreaterThan(0);
+  });
+
+  it("scales overlay sprites by a whole number so the silhouette stays square", () => {
+    const rgba = new Uint8ClampedArray(10 * 8 * 4);
+    for (let i = 0; i < 80; i++) {
+      rgba[i * 4] = 255;
+      rgba[i * 4 + 3] = 255;
+    }
+    const sprite = { width: 10, height: 8, rgba };
+    const fb = blank();
+    renderWeapon(
+      fb,
+      { weapon: "pistol", cooldown: 0, swing: 0, swingTime: 0.34 },
+      { ...OPTS, sprites: { pistol: { idle: sprite, fire: sprite } } },
+    );
+    const { minX, maxX } = boundingBox(fb);
+    expect((maxX - minX + 1) % 10).toBe(0);
+  });
+
+  it("keeps overlay guns in the lower half so enemies stay visible", () => {
+    const rgba = new Uint8ClampedArray(40 * 50 * 4);
+    for (let i = 0; i < 2000; i++) {
+      rgba[i * 4] = 255;
+      rgba[i * 4 + 3] = 255;
+    }
+    const sprite = { width: 40, height: 50, rgba };
+    const fb = blank();
+    renderWeapon(
+      fb,
+      { weapon: "pistol", cooldown: 0, swing: 0, swingTime: 0.34 },
+      { ...OPTS, sprites: { pistol: { idle: sprite, fire: sprite } } },
+    );
+    let topHalf = 0;
+    for (let y = 0; y < HEIGHT >> 1; y++) {
+      for (let x = 0; x < WIDTH; x++) {
+        if (fb.data[y * WIDTH + x] !== 0) topHalf++;
+      }
+    }
+    expect(painted(fb)).toBeGreaterThan(0);
+    expect(topHalf).toBe(0);
   });
 });
 
