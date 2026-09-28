@@ -15,7 +15,7 @@ import {
 } from "./game/weapons.js";
 import { renderFloorCeiling } from "./render/floors.js";
 import { createPresenter } from "./render/framebuffer.js";
-import { PALETTE, PALETTE_SIZE, SHADE_LEVELS, buildShadeTable, rgb } from "./render/palette.js";
+import { ACCENT, PALETTE, PALETTE_SIZE, RAMP, SHADE_LEVELS, buildShadeTable, rgb } from "./render/palette.js";
 import { renderParticles } from "./render/particles.js";
 import { makeCamera } from "./render/raycast.js";
 import { renderSprites } from "./render/sprites.js";
@@ -193,6 +193,7 @@ function attack() {
     return;
   }
   state.mag -= 1;
+  ejectCasing();
   state.cooldown = weapon.cooldown;
   state.lightBoost = weapon.lightBoost;
   applyHits(fireWeapon(world(), weapon));
@@ -200,10 +201,66 @@ function attack() {
   syncHud();
 }
 
+const HIT_MARK_T = 0.14;
+
 function applyHits(hits) {
   for (const hit of hits) {
-    if (hit.killed) state.kills += 1;
+    if (hit.kind === "wall") {
+      // Chips off the wall: fewer, paler, and thrown back towards the
+      // shooter rather than away.
+      particles.spawnBurst(hit.x, hit.y, 0.5, -hit.dirX, -hit.dirY, 4, {
+        colorIndex: RAMP.concrete + 4,
+        speed: 1.4,
+        spread: 1.0,
+        life: 0.3,
+        lift: 0.8,
+      });
+      continue;
+    }
+
+    state.hitMark = HIT_MARK_T;
+    particles.spawnBurst(hit.x, hit.y, 0.55, hit.dirX, hit.dirY, 9, {
+      colorIndex: ACCENT.blood,
+      speed: 2.4,
+      spread: 0.9,
+      life: 0.55,
+      lift: 1.4,
+    });
+
+    if (hit.killed) {
+      state.kills += 1;
+      // A death throws far more, and darker.
+      particles.spawnBurst(hit.x, hit.y, 0.5, hit.dirX, hit.dirY, 18, {
+        colorIndex: ACCENT.bloodDark,
+        speed: 3.2,
+        spread: 1.6,
+        life: 0.8,
+        lift: 2.0,
+      });
+    }
   }
+}
+
+function ejectCasing() {
+  const { x, y, a } = state.player;
+  // Right-hand vector for this game's convention: forward is (cos, sin).
+  const rightX = -Math.sin(a);
+  const rightY = Math.cos(a);
+  particles.spawnBurst(
+    x + rightX * 0.22 + Math.cos(a) * 0.18,
+    y + rightY * 0.22 + Math.sin(a) * 0.18,
+    0.55,
+    rightX,
+    rightY,
+    1,
+    {
+      colorIndex: ACCENT.gold,
+      speed: 1.1,
+      spread: 0.35,
+      life: 0.7,
+      lift: 1.1,
+    },
+  );
 }
 
 // The F key swings the pipe whatever is equipped — a panic melee. It shares
@@ -234,6 +291,7 @@ function update(dt) {
   if (state.phase !== "play") return;
   state.cooldown = Math.max(0, state.cooldown - dt);
   state.lightBoost = Math.max(0, state.lightBoost - dt * 4);
+  state.hitMark = Math.max(0, state.hitMark - dt);
   state.hurt = Math.max(0, state.hurt - dt);
   state.iframes = Math.max(0, state.iframes - dt);
   state.swing = Math.max(0, state.swing - dt);
@@ -357,7 +415,7 @@ function draw() {
       { weapon: state.weapon, cooldown: state.cooldown, swing: state.swing, swingTime: currentWeapon().swingTime ?? 0.34 },
       { shadeTable, paletteSize: PALETTE_SIZE },
     );
-    renderCrosshair(fb, shadeTable, PALETTE_SIZE);
+    renderCrosshair(fb, shadeTable, PALETTE_SIZE, state.hitMark);
   }
   if (state.hurt > 0) renderFlash(fb, rgb(180, 20, 10), state.hurt);
   if (state.iframes > 0 && state.phase === "play") {

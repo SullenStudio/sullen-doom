@@ -121,13 +121,19 @@ export function renderWeapon(fb, view, options) {
   else drawGun(fb, view, options);
 }
 
-export function renderCrosshair(fb, shadeTable, paletteSize) {
+/**
+ * The aim point. `hitMark` above zero draws four diagonal ticks around it —
+ * the standard, wordless "that landed" signal, and the only feedback the
+ * player sees without looking away from where they are aiming.
+ */
+export function renderCrosshair(fb, shadeTable, paletteSize, hitMark = 0) {
   const { width, height } = fb;
   const cx = width >> 1;
   const cy = height >> 1;
   const arm = Math.max(2, Math.round(height / 24));
   const gap = Math.max(1, Math.round(arm / 3));
   const color = shadeTable[FULL * paletteSize + ACCENT.goldLight];
+
   fb.fillRect(cx, cy - arm - gap, 1, arm, color);
   fb.fillRect(cx, cy + gap, 1, arm, color);
   fb.fillRect(cx - arm - gap, cy, arm, 1, color);
@@ -135,6 +141,20 @@ export function renderCrosshair(fb, shadeTable, paletteSize) {
   // The four arms leave a gap around the centre by design; mark the exact
   // centre pixel too so aim always has a precise point of reference.
   fb.fillRect(cx, cy, 1, 1, color);
+
+  if (hitMark <= 0) return;
+
+  // Four ticks stepping outwards diagonally, drawn a pixel at a time so the
+  // mark reads as a burst rather than a box.
+  const markColor = shadeTable[FULL * paletteSize + ACCENT.blood];
+  const reach = Math.max(2, Math.round(arm * 0.9));
+  const start = gap + 1;
+  for (let i = start; i < start + reach; i++) {
+    fb.fillRect(cx - i, cy - i, 1, 1, markColor);
+    fb.fillRect(cx + i, cy - i, 1, 1, markColor);
+    fb.fillRect(cx - i, cy + i, 1, 1, markColor);
+    fb.fillRect(cx + i, cy + i, 1, 1, markColor);
+  }
 }
 
 /** Full-screen tint. Used for damage and for pickups. */

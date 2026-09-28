@@ -34,6 +34,7 @@ export function createGameState(parsed) {
     iframes: 0,
     swing: 0,
     lightBoost: 0,
+    hitMark: 0,
     weapon: "pistol",
     phase: "menu",
     reset() {
@@ -54,6 +55,7 @@ export function createGameState(parsed) {
       state.iframes = 0;
       state.swing = 0;
       state.lightBoost = 0;
+      state.hitMark = 0;
       state.weapon = "pistol";
       state.phase = "play";
     },

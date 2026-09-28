@@ -197,6 +197,37 @@ describe("renderCrosshair", () => {
     renderCrosshair(fb, shadeTable, PALETTE_SIZE);
     expect(fb.data[(HEIGHT >> 1) * WIDTH + (WIDTH >> 1)]).not.toBe(0);
   });
+
+  it("looks different once a hit lands", () => {
+    const calm = blank();
+    const struck = blank();
+    renderCrosshair(calm, shadeTable, PALETTE_SIZE, 0);
+    renderCrosshair(struck, shadeTable, PALETTE_SIZE, 1);
+    expect([...calm.data]).not.toEqual([...struck.data]);
+  });
+
+  it("paints more of the screen when marking a hit", () => {
+    const calm = blank();
+    const struck = blank();
+    renderCrosshair(calm, shadeTable, PALETTE_SIZE, 0);
+    renderCrosshair(struck, shadeTable, PALETTE_SIZE, 1);
+    const lit = (fb) => [...fb.data].filter((p) => p !== 0).length;
+    expect(lit(struck)).toBeGreaterThan(lit(calm));
+  });
+
+  it("stays inside the buffer while marking a hit", () => {
+    const fb = createFramebuffer(24, 16);
+    fb.clear(0);
+    expect(() => renderCrosshair(fb, shadeTable, PALETTE_SIZE, 1)).not.toThrow();
+  });
+
+  it("defaults to the calm crosshair when no mark is given", () => {
+    const implicit = blank();
+    const explicit = blank();
+    renderCrosshair(implicit, shadeTable, PALETTE_SIZE);
+    renderCrosshair(explicit, shadeTable, PALETTE_SIZE, 0);
+    expect([...implicit.data]).toEqual([...explicit.data]);
+  });
 });
 
 describe("renderFlash", () => {
