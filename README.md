@@ -3,7 +3,7 @@
 A cramped corridor shooter. First-person raycaster, procedural art,
 no external assets.
 
-**Play:** https://sullenstudio.github.io/sullen-descent/
+**Play:** https://sullenstudio.github.io/sullen-doom/
 
 ## Controls
 
@@ -12,6 +12,7 @@ no external assets.
 | WASD / arrows | move |
 | mouse | look |
 | click / space | fire |
+| 1–4 / Q | weapons |
 | Phone | left stick + FIRE, drag the view to look |
 
 Best kill count is stored in `localStorage`.
