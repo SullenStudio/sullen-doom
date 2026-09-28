@@ -16,7 +16,7 @@ export const WEAPONS = {
     cooldown: 0.34,
     swingTime: 0.34,
     knockback: 0.22,
-    shake: 0.1,
+    shake: 0.15,
     lightBoost: 0,
   },
   pistol: {
@@ -32,7 +32,7 @@ export const WEAPONS = {
     magSize: 8,
     reloadTime: 0.85,
     knockback: 0.14,
-    shake: 0.18,
+    shake: 0.3,
     lightBoost: 0.35,
   },
 };

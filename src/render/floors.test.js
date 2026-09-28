@@ -89,4 +89,43 @@ describe("renderFloorCeiling", () => {
       expect(Number.isFinite(pixel)).toBe(true);
     }
   });
+
+  it("mirrors the ceiling about a shifted horizon, not the buffer centre", () => {
+    // With the horizon pushed off centre, the ceiling must follow it. The
+    // two are indistinguishable while the horizon sits at height / 2, so
+    // this is the only arrangement that can catch the difference.
+    const shifted = (HEIGHT >> 1) - 8;
+    const fb = createFramebuffer(WIDTH, HEIGHT);
+    fb.clear(0);
+    renderFloorCeiling(
+      fb,
+      makeCamera(2.5, 2.5, 0, FOV),
+      textures[TEXTURE_SLOT.floor],
+      textures[TEXTURE_SLOT.ceiling],
+      { shadeTable, paletteSize: PALETTE_SIZE, lightBoost: 0, horizon: shifted },
+    );
+    // One row below the horizon is floor; its mirror one row above is
+    // ceiling. Warmth separates them: the ceiling is rust, the floor grey.
+    const warmthAt = (y) => {
+      let sum = 0;
+      for (let x = 0; x < WIDTH; x++) {
+        const p = fb.data[y * WIDTH + x];
+        sum += (p & 255) - ((p >> 16) & 255);
+      }
+      return sum / WIDTH;
+    };
+    // A plain "ceiling side is warmer than floor side" comparison is not
+    // enough to catch a mirror bug here: mirroring about the buffer centre
+    // instead of the horizon still paints the floor row with *some*
+    // ceiling-textured content (just sampled at the wrong distance), and
+    // that miscoloured floor row is still warmer than nothing — only a
+    // little cooler than the genuine ceiling row next to it, because both
+    // are rust. The comparison survives on that thin margin even when the
+    // mirror is wrong. Pinning each side to an absolute threshold instead
+    // — measured against genuine floor/ceiling rows far from the horizon —
+    // actually fails when the floor row comes back rust-warm instead of
+    // concrete-cool.
+    expect(warmthAt(shifted - 6)).toBeGreaterThan(30);
+    expect(warmthAt(shifted + 6)).toBeLessThan(15);
+  });
 });

@@ -39,8 +39,28 @@ export function renderFloorCeiling(fb, camera, floorTex, ceilingTex, options) {
   // the screen.
   data.fill(shadeTable[0]);
 
-  for (let y = horizon + 1; y < height; y++) {
-    const rowDist = eyeHeight / (y - horizon);
+  // k counts rows away from the horizon on both sides at once: row
+  // `horizon + k` is the k-th floor row below it, and its mirror on the
+  // ceiling side is `horizon - k - 1` (the "-1" is not an off-by-one to
+  // clean up — the horizon itself sits on the boundary between those two
+  // rows, not inside either one, so the row immediately below it and the
+  // row immediately above it are each one step removed from that boundary,
+  // not zero).
+  //
+  // The two sides need different numbers of rows once the horizon isn't at
+  // height / 2 (shake, or simply an even buffer height, moves it there),
+  // so the loop runs as long as whichever side needs more and each write is
+  // guarded on its own. Without that, sizing the loop to the floor side
+  // alone — as if the two were always equal — silently drops however many
+  // rows the ceiling side is longer by, leaving them on the dark prefill.
+  // That gap is real: it is not masked by the walls, which centre on the
+  // horizon rather than reaching all the way to the buffer edge.
+  const floorSpan = height - 1 - horizon;
+  const ceilSpan = horizon;
+  const maxK = Math.max(floorSpan, ceilSpan);
+
+  for (let k = 1; k <= maxK; k++) {
+    const rowDist = eyeHeight / k;
 
     const stepX = (rowDist * (rayDirX1 - rayDirX0)) / width;
     const stepY = (rowDist * (rayDirY1 - rayDirY0)) / width;
@@ -48,8 +68,13 @@ export function renderFloorCeiling(fb, camera, floorTex, ceilingTex, options) {
     let worldY = camera.y + rowDist * rayDirY0;
 
     const shadeBase = lightLevel(rowDist, 0, lightBoost) * paletteSize;
+
+    const y = horizon + k;
+    const ceilY = horizon - k - 1;
+    const drawFloor = y < height;
+    const drawCeil = ceilY >= 0;
     const floorRow = y * width;
-    const ceilRow = (height - y - 1) * width;
+    const ceilRow = ceilY * width;
 
     for (let x = 0; x < width; x++) {
       const fx = Math.floor(worldX * floorSize) & floorMask;
@@ -57,10 +82,14 @@ export function renderFloorCeiling(fb, camera, floorTex, ceilingTex, options) {
       const cx = Math.floor(worldX * ceilSize) & ceilMask;
       const cy = Math.floor(worldY * ceilSize) & ceilMask;
 
-      data[floorRow + x] =
-        shadeTable[shadeBase + floorTex.pixels[fy * floorSize + fx]];
-      data[ceilRow + x] =
-        shadeTable[shadeBase + ceilingTex.pixels[cy * ceilSize + cx]];
+      if (drawFloor) {
+        data[floorRow + x] =
+          shadeTable[shadeBase + floorTex.pixels[fy * floorSize + fx]];
+      }
+      if (drawCeil) {
+        data[ceilRow + x] =
+          shadeTable[shadeBase + ceilingTex.pixels[cy * ceilSize + cx]];
+      }
 
       worldX += stepX;
       worldY += stepY;
