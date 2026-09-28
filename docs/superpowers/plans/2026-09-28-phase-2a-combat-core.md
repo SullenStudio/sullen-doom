@@ -1370,21 +1370,30 @@ const W = 96;
 const H = 60;
 const FOV = Math.PI / 3;
 
-function scene(place, wallDepth = Infinity) {
-  const fb = createFramebuffer(W, H);
+// Most checks only care where a pixel lands, so they use a small buffer.
+// Anything measuring SIZE has to use something close to the real one: at
+// 60 pixels tall the size formula rounds every plausible distance down to a
+// single pixel, and a test comparing one pixel against one pixel measures
+// the rounding, not the renderer.
+function scene(place, wallDepth = Infinity, w = W, h = H) {
+  const fb = createFramebuffer(w, h);
   fb.clear(0);
-  const zbuf = new Float32Array(W).fill(wallDepth);
+  const zbuf = new Float32Array(w).fill(wallDepth);
   const particles = createParticles(8);
   place(particles);
   renderParticles(fb, makeCamera(2.5, 2.5, 0, FOV), particles, {
     shadeTable,
     paletteSize: PALETTE_SIZE,
     zbuf,
-    horizon: H >> 1,
+    horizon: h >> 1,
     lightBoost: 0,
   });
   return fb;
 }
+
+// The internal buffer the game actually renders into.
+const GAME_W = 480;
+const GAME_H = 300;
 
 const painted = (fb) => [...fb.data].filter((p) => p !== 0).length;
 
@@ -1421,9 +1430,16 @@ describe("renderParticles", () => {
   });
 
   it("draws a near particle larger than a far one", () => {
-    const near = painted(scene((p) => place(p, 3.2, 2.5, 0.5)));
-    const far = painted(scene((p) => place(p, 8.0, 2.5, 0.5)));
+    // At the game's own resolution, not the small one: see the note on
+    // scene(). A near particle is several pixels across, a far one is a dot.
+    const near = painted(
+      scene((p) => place(p, 3.2, 2.5, 0.5), Infinity, GAME_W, GAME_H),
+    );
+    const far = painted(
+      scene((p) => place(p, 8.0, 2.5, 0.5), Infinity, GAME_W, GAME_H),
+    );
     expect(near).toBeGreaterThan(far);
+    expect(far).toBeGreaterThanOrEqual(1);
   });
 
   it("puts a particle at floor height below one at head height", () => {
