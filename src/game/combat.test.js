@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { parseMap } from "./map.js";
 import { WEAPONS } from "./weapons.js";
-import { HIT_FLASH_T, fireWeapon, swingMelee } from "./combat.js";
+import { HIT_FLASH_T, casingSpawn, fireWeapon, swingMelee } from "./combat.js";
+import { makeCamera } from "../render/raycast.js";
+import { projectSprite } from "../render/sprites.js";
 
 const { map } = parseMap([
   "#########",
@@ -251,5 +253,39 @@ describe("direction vectors handed to the hitscan", () => {
         expect(Math.hypot(hit.dirX, hit.dirY)).toBeCloseTo(1, 12);
       }
     }
+  });
+});
+
+describe("casingSpawn", () => {
+  it("lands inside the view cone at every heading", () => {
+    // The offset is rotation-invariant by construction, so a failure here
+    // means the ratio itself drifted out of the frustum — the exact defect
+    // this guards against.
+    for (let i = 0; i < 16; i++) {
+      const a = (i / 16) * Math.PI * 2;
+      const player = { x: 4.5, y: 4.5, a };
+      const spot = casingSpawn(player);
+      const projected = projectSprite(
+        makeCamera(player.x, player.y, a, Math.PI / 3),
+        spot.x,
+        spot.y,
+      );
+      expect(projected).not.toBe(null);
+      expect(projected.screenX).toBeGreaterThan(0);
+      expect(projected.screenX).toBeLessThan(1);
+    }
+  });
+
+  it("ejects to the player's right, not the left", () => {
+    const player = { x: 4.5, y: 4.5, a: 0 };
+    const spot = casingSpawn(player);
+    // Facing +x, the player's right is +y in this game's convention.
+    expect(spot.y).toBeGreaterThan(player.y);
+    expect(spot.dirY).toBeGreaterThan(0);
+  });
+
+  it("puts the spawn point in front of the player", () => {
+    const player = { x: 4.5, y: 4.5, a: 0 };
+    expect(casingSpawn(player).x).toBeGreaterThan(player.x);
   });
 });

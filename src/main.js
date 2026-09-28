@@ -2,7 +2,7 @@ import "./style.css";
 import { TEXTURE_SLOT, generateTextures, makeEnemySprite } from "./assets/textures.js";
 import { createInput, readMoveAxes } from "./core/input.js";
 import { createLoop } from "./core/loop.js";
-import { fireWeapon, swingMelee } from "./game/combat.js";
+import { casingSpawn, fireWeapon, swingMelee } from "./game/combat.js";
 import { parseMap } from "./game/map.js";
 import { createParticles } from "./game/particles.js";
 import { createGameState, createHudBinding } from "./game/state.js";
@@ -251,29 +251,14 @@ function applyHits(hits) {
 }
 
 function ejectCasing() {
-  const { x, y, a } = state.player;
-  // Right-hand vector for this game's convention: forward is (cos, sin).
-  const rightX = -Math.sin(a);
-  const rightY = Math.cos(a);
-  // Forward must dominate sideways, or the spawn point falls outside the
-  // view cone and the casing is never drawn at all. The half-angle of a 60
-  // degree field of view allows a sideways-to-forward ratio of about 0.58;
-  // 0.12 over 0.35 is roughly 0.34, comfortably inside it.
-  particles.spawnBurst(
-    x + rightX * 0.12 + Math.cos(a) * 0.35,
-    y + rightY * 0.12 + Math.sin(a) * 0.35,
-    0.55,
-    rightX,
-    rightY,
-    1,
-    {
-      colorIndex: ACCENT.gold,
-      speed: 1.1,
-      spread: 0.35,
-      life: 0.7,
-      lift: 1.1,
-    },
-  );
+  const spot = casingSpawn(state.player);
+  particles.spawnBurst(spot.x, spot.y, 0.55, spot.dirX, spot.dirY, 1, {
+    colorIndex: ACCENT.gold,
+    speed: 1.1,
+    spread: 0.35,
+    life: 0.7,
+    lift: 1.1,
+  });
 }
 
 // The F key swings the pipe whatever is equipped — a panic melee. It shares

@@ -90,3 +90,22 @@ export function swingMelee(world, weapon) {
   }
   return hits;
 }
+
+// Where a spent casing appears: out to the player's right, and further
+// forward than sideways. The view cone at a 60 degree field of view admits
+// a sideways-to-forward ratio of about 0.58. Beyond that the spawn point is
+// outside the frustum and the casing is never drawn at all — it ejects and
+// falls exactly as simulated, invisibly.
+const CASING_SIDE = 0.12;
+const CASING_FORWARD = 0.35;
+
+export function casingSpawn(player) {
+  const rightX = -Math.sin(player.a);
+  const rightY = Math.cos(player.a);
+  return {
+    x: player.x + rightX * CASING_SIDE + Math.cos(player.a) * CASING_FORWARD,
+    y: player.y + rightY * CASING_SIDE + Math.sin(player.a) * CASING_FORWARD,
+    dirX: rightX,
+    dirY: rightY,
+  };
+}
