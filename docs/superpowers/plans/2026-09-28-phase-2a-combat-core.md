@@ -842,20 +842,32 @@ function world() {
 Заменить `attack`, `swapWeapon`, `selectWeapon` и `startReload`:
 
 ```js
+/**
+ * Every swing goes through here, whichever key started it.
+ *
+ * One gate for one action: `state.swing`. Splitting the melee across two
+ * entry points with different gates — the attack key checking the cooldown
+ * while the melee key checked the swing — lets a player press both and land
+ * two full swings, because neither gate sees what the other set.
+ */
+function swingWeapon(weapon) {
+  if (state.swing > 0) return;
+  state.swing = weapon.swingTime;
+  state.cooldown = weapon.cooldown;
+  applyHits(swingMelee(world(), weapon));
+  syncHud();
+}
+
 function attack() {
   if (state.phase !== "play") return;
   const weapon = currentWeapon();
-  if (state.cooldown > 0) return;
 
   if (weapon.kind === "melee") {
-    state.cooldown = weapon.cooldown;
-    state.swing = weapon.swingTime;
-    applyHits(swingMelee(world(), weapon), weapon);
-    syncHud();
+    swingWeapon(weapon);
     return;
   }
 
-  if (state.reloading > 0) return;
+  if (state.cooldown > 0 || state.reloading > 0) return;
   if (state.mag <= 0) {
     startReload();
     return;
@@ -863,7 +875,7 @@ function attack() {
   state.mag -= 1;
   state.cooldown = weapon.cooldown;
   state.lightBoost = weapon.lightBoost;
-  applyHits(fireWeapon(world(), weapon), weapon);
+  applyHits(fireWeapon(world(), weapon));
   if (state.mag <= 0) startReload();
   syncHud();
 }
@@ -906,16 +918,13 @@ function startReload() {
 в исходной игре:
 
 ```js
-// The F key swings the pipe whatever is equipped — a panic melee. It is
-// gated on its own swing timer rather than the equipped weapon's cooldown,
-// so holstering a spent pistol is never the thing that stops you hitting
-// something.
+// The F key swings the pipe whatever is equipped — a panic melee. It shares
+// swingWeapon's gate, so it cannot be combined with the attack key to land
+// two swings, but it deliberately ignores the equipped weapon's cooldown:
+// a spent pistol should never be the thing that stops you hitting something.
 function quickMelee() {
-  if (state.phase !== "play" || state.swing > 0) return;
-  const pipe = WEAPONS.pipe;
-  state.swing = pipe.swingTime;
-  applyHits(swingMelee(world(), pipe), pipe);
-  syncHud();
+  if (state.phase !== "play") return;
+  swingWeapon(WEAPONS.pipe);
 }
 ```
 
@@ -1921,6 +1930,8 @@ git commit -m "feat: shake the world on impact without moving the aim point"
 - [ ] Каждый выстрел из стрелкового оружия выбрасывает гильзу вправо.
 - [ ] Тряска камеры не смещает прицел и после затухания возвращает горизонт на место.
 - [ ] Оружие описано таблицей: добавление ствола того же вида не требует правок в коде стрельбы.
+- [ ] Удар нельзя удвоить, нажав клавишу удара и клавишу атаки подряд: у обеих одни ворота.
+- [ ] Цифровые клавиши: `1` — ближний бой, `2` — пистолет. Это сознательная смена раскладки против прежней (`1` — пистолет, `2` — палка): она соответствует жанровой норме и готовит место под стволы `3`–`6`.
 - [ ] Клавиша `F` по-прежнему бьёт трубой независимо от того, что в руках.
 - [ ] Частицы не аллоцируются в кадре — пул создан один раз.
 
