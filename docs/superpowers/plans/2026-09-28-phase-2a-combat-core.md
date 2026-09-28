@@ -1110,13 +1110,35 @@ describe("createParticles", () => {
     expect(p.activeCount()).toBe(0);
   });
 
-  it("pulls particles downward over time", () => {
+  it("accelerates particles downward every step", () => {
+    // The direct statement of gravity: vertical speed only ever decreases.
     const p = createParticles(8);
     burst(p, 1, { life: 10 });
     const q = p.items.find((i) => i.life > 0);
-    const first = q.z;
-    for (let i = 0; i < 40; i++) p.update(1 / 60, map);
-    expect(q.z).toBeLessThan(first);
+    let previous = Infinity;
+    for (let i = 0; i < 10; i++) {
+      p.update(1 / 60, map);
+      expect(q.vz).toBeLessThan(previous);
+      previous = q.vz;
+    }
+  });
+
+  it("throws particles up before gravity brings them back down", () => {
+    // A burst is thrown upward, so it rises first. With a lift of about 1.2
+    // against a gravity of 2.6 the peak arrives near 0.46s and the particle
+    // does not return to its launch height until roughly 0.92s — so a test
+    // that samples too early sees it still above where it started.
+    const p = createParticles(8);
+    burst(p, 1, { life: 10 });
+    const q = p.items.find((i) => i.life > 0);
+    const start = q.z;
+    const heights = [];
+    for (let i = 0; i < 90; i++) {
+      p.update(1 / 60, map);
+      heights.push(q.z);
+    }
+    expect(Math.max(...heights)).toBeGreaterThan(start);
+    expect(heights[heights.length - 1]).toBeLessThan(start);
   });
 
   it("settles particles on the floor instead of sinking through it", () => {
