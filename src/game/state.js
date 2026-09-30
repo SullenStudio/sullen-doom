@@ -1,4 +1,4 @@
-import { startingMags, startingReserves } from "./weapons.js";
+import { startingMags, startingOwned, startingReserves } from "./weapons.js";
 
 const START_HP = 100;
 const ENEMY_HP = 8;
@@ -16,6 +16,7 @@ function freshLoadout() {
   return {
     mags: startingMags(),
     reserves: startingReserves(),
+    owned: startingOwned(),
   };
 }
 
@@ -30,6 +31,8 @@ function combatIdle(state) {
   state.lightBoost = 0;
   state.hitMark = 0;
   state.shake = 0;
+  state.pickupFlash = 0;
+  state.pickupTint = 0;
 }
 
 /**
@@ -49,6 +52,8 @@ export function createGameState(parsed) {
     hp: START_HP,
     mags: loadout.mags,
     reserves: loadout.reserves,
+    owned: loadout.owned,
+    pickups: [],
     reloading: 0,
     reloadId: null,
     heat: 0,
@@ -60,6 +65,8 @@ export function createGameState(parsed) {
     lightBoost: 0,
     hitMark: 0,
     shake: 0,
+    pickupFlash: 0,
+    pickupTint: 0,
     weapon: "pistol",
     phase: "menu",
     enter(next, { keepLoadout = false } = {}) {
@@ -69,12 +76,14 @@ export function createGameState(parsed) {
         a: next.playerStart.angle,
       };
       state.enemies = spawnEnemies(next);
+      state.pickups = [];
       combatIdle(state);
       if (!keepLoadout) {
         const pack = freshLoadout();
         state.hp = START_HP;
         state.mags = pack.mags;
         state.reserves = pack.reserves;
+        state.owned = pack.owned;
         state.kills = 0;
         state.weapon = "pistol";
       }
@@ -102,8 +111,14 @@ export function createHudBinding(elements) {
           elements.hpBlock.dataset.tone = values.hpTone;
         }
       }
+      if (elements.aliveBlock && "aliveTone" in values) {
+        if (shown.aliveTone !== values.aliveTone) {
+          shown.aliveTone = values.aliveTone;
+          elements.aliveBlock.dataset.tone = values.aliveTone;
+        }
+      }
       for (const key of Object.keys(elements)) {
-        if (key === "hpBlock") continue;
+        if (key === "hpBlock" || key === "aliveBlock") continue;
         if (!(key in values)) continue;
         if (shown[key] === values[key]) continue;
         shown[key] = values[key];

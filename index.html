@@ -12,6 +12,10 @@
   <body>
     <div id="app">
       <canvas id="view"></canvas>
+      <div id="alive-block">
+        <span id="alive-label">HOSTILES</span>
+        <span id="alive">0</span>
+      </div>
       <div id="hud">
         <div id="hp-block" data-tone="ok">
           <span id="hp-icon" aria-hidden="true">+</span>
@@ -34,7 +38,7 @@
         <h1>SULLEN DESCENT</h1>
         <p>a cramped corridor shooter</p>
         <button type="button" id="btn-play">DESCEND</button>
-        <p class="hint">WASD move · mouse look · click fire · 1-4 or Q swap · F melee · R reload · find the exit</p>
+        <p class="hint">WASD move · mouse look · click fire · 1-4 · Q prev · E next · F melee · R reload · clear the map to open the gate · pick up drops</p>
       </div>
       <div id="mobile-ui">
         <div id="stick"></div>

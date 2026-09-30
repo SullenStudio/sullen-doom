@@ -29,15 +29,19 @@ describe("createGameState", () => {
     expect(s.kills).toBe(0);
     expect(s.phase).toBe("menu");
     expect(s.mags.pistol).toBeGreaterThan(0);
-    expect(s.mags.shotgun).toBeGreaterThan(0);
+    expect(s.mags.shotgun).toBeUndefined();
+    expect(s.owned).toEqual(["pipe", "pistol"]);
+    expect(s.pickups).toEqual([]);
     expect(s.reserves.bullets).toBeGreaterThan(0);
-    expect(s.reserves.shells).toBeGreaterThan(0);
+    expect(s.reserves.shells).toBe(0);
   });
 
-  it("does not share magazines between pistol and shotgun", () => {
+  it("does not share magazines between pistol and shotgun after a find", () => {
     const s = createGameState(parsed);
+    s.owned.push("shotgun");
+    s.mags.shotgun = 2;
     s.mags.pistol = 1;
-    expect(s.mags.shotgun).toBeGreaterThan(1);
+    expect(s.mags.shotgun).toBe(2);
   });
 
   it("shares the bullet reserve between pistol and chaingun", () => {
@@ -68,12 +72,14 @@ describe("createGameState", () => {
     s.hp = 41;
     s.mags.pistol = 2;
     s.weapon = "shotgun";
+    s.owned.push("shotgun");
     s.kills = 3;
     const next = parseMap(["#####", "#P..#", "#..X#", "#####"]);
     s.enter(next, { keepLoadout: true });
     expect(s.hp).toBe(41);
     expect(s.mags.pistol).toBe(2);
     expect(s.weapon).toBe("shotgun");
+    expect(s.owned).toContain("shotgun");
     expect(s.kills).toBe(3);
     expect(s.player.x).toBe(1.5);
     expect(s.enemies).toHaveLength(0);
@@ -89,7 +95,15 @@ describe("createGameState", () => {
     expect(s.hp).toBe(100);
     expect(s.mags.pistol).toBeGreaterThan(1);
     expect(s.weapon).toBe("pistol");
+    expect(s.owned).toEqual(["pipe", "pistol"]);
     expect(s.kills).toBe(0);
+  });
+
+  it("clears floor pickups when entering a map", () => {
+    const s = createGameState(parsed);
+    s.pickups.push({ x: 1, y: 1, kind: "health", amount: 25, taken: false });
+    s.enter(parsed, { keepLoadout: true });
+    expect(s.pickups).toEqual([]);
   });
 });
 

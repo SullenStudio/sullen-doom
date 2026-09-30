@@ -80,6 +80,12 @@ describe("fireWeapon", () => {
     expect(hits[0].killed).toBe(true);
   });
 
+  it("does not flag extra pellets on a corpse as more kills", () => {
+    const e = foe(7, 4.5, 1);
+    const hits = fireWeapon(world([e]), WEAPONS.shotgun, () => 0.5);
+    expect(hits.filter((h) => h.killed)).toHaveLength(1);
+  });
+
   it("does not flag a kill on a survivable hit", () => {
     const hits = fireWeapon(world([foe(7, 4.5, 99)]), WEAPONS.pistol);
     expect(hits[0].killed).toBe(false);

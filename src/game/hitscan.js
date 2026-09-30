@@ -22,6 +22,15 @@ export function wallDistance(map, ox, oy, dirX, dirY, maxDist) {
   return hit.hit ? Math.min(hit.dist, maxDist) : maxDist;
 }
 
+/** True when the first wall along the segment sits at or beyond the target. */
+export function hasLineOfSight(map, ax, ay, bx, by) {
+  const dx = bx - ax;
+  const dy = by - ay;
+  const dist = Math.hypot(dx, dy);
+  if (dist < 1e-6) return true;
+  return wallDistance(map, ax, ay, dx / dist, dy / dist, dist) >= dist - 1e-3;
+}
+
 /**
  * Nearest positive intersection of a ray with a circle, or null.
  *

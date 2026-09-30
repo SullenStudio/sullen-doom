@@ -25,6 +25,7 @@ export const TEXTURE_SLOT = {
   tech: 4,
   floor: 5,
   ceiling: 6,
+  door: 7,
 };
 
 /** Picks a step inside a six-colour ramp from a 0..1 value. */
@@ -171,10 +172,45 @@ function ceilingTile(rng, ox = 0, oy = 0) {
   return px;
 }
 
+/** Barred gate: metal frame, vertical bars, a gold lock band. */
+function door(rng, ox = 0, oy = 0) {
+  const noise = makeValueNoise(rng, NOISE_LATTICE);
+  const px = blank();
+  const BAR = 8;
+  const BAR_W = 3;
+  const FRAME = 4;
+  const BAND_Y0 = 28;
+  const BAND_Y1 = 36;
+  for (let y = 0; y < TEX_SIZE; y++) {
+    const gy = y + oy;
+    for (let x = 0; x < TEX_SIZE; x++) {
+      const gx = x + ox;
+      const grain = fbm(noise, gx * STEP_UV * 4, gy * STEP_UV, 3);
+      const lx = ((gx % TEX_SIZE) + TEX_SIZE) % TEX_SIZE;
+      const ly = ((gy % TEX_SIZE) + TEX_SIZE) % TEX_SIZE;
+      const frame =
+        lx < FRAME || lx >= TEX_SIZE - FRAME || ly < FRAME || ly >= TEX_SIZE - FRAME;
+      const bar = lx % BAR < BAR_W;
+      const band = ly >= BAND_Y0 && ly < BAND_Y1;
+      if (frame) {
+        px[y * TEX_SIZE + x] = step(RAMP.concrete, 0.2 + grain * 0.25);
+      } else if (band) {
+        px[y * TEX_SIZE + x] =
+          ly === BAND_Y0 || ly === BAND_Y1 - 1 ? ACCENT.gold : ACCENT.goldLight;
+      } else if (bar) {
+        px[y * TEX_SIZE + x] = step(RAMP.rust, 0.4 + grain * 0.35);
+      } else {
+        px[y * TEX_SIZE + x] = step(RAMP.concrete, 0.12 + grain * 0.2);
+      }
+    }
+  }
+  return px;
+}
+
 export function generateTextures(seed = 1337) {
   // Each generator gets its own stream so adding one later does not reshuffle
   // the others.
-  const builders = [brick, metal, concrete, flesh, tech, floorTile, ceilingTile];
+  const builders = [brick, metal, concrete, flesh, tech, floorTile, ceilingTile, door];
   return builders.map((build, i) => ({
     size: TEX_SIZE,
     pixels: build(makeRng(seed + i * 7919)),
@@ -187,7 +223,7 @@ export function generateTextures(seed = 1337) {
  * and at (ox, oy + TEX_SIZE) if the texture is seamless.
  */
 export function generateTileAt(slot, seed = 1337, ox = 0, oy = 0) {
-  const builders = [brick, metal, concrete, flesh, tech, floorTile, ceilingTile];
+  const builders = [brick, metal, concrete, flesh, tech, floorTile, ceilingTile, door];
   if (slot < 0 || slot >= builders.length) {
     throw new Error(`Invalid texture slot: ${slot}`);
   }
@@ -233,4 +269,36 @@ export function makeEnemySprite(seed = 7) {
     }
   }
   return { width: SPRITE_W, height: SPRITE_H, pixels: px };
+}
+
+const PICKUP_W = 16;
+const PICKUP_H = 20;
+
+/**
+ * Floor drops: a crate for ammo, a cross for medkits, a taller gold box
+ * for found guns. Small enough that they sit on the floor instead of
+ * reading as another enemy.
+ */
+export function makePickupSprite(kind) {
+  const px = new Uint8Array(PICKUP_W * PICKUP_H).fill(TRANSPARENT);
+  const fill =
+    kind === "health" ? ACCENT.blood : kind === "weapon" ? ACCENT.gold : ACCENT.goldLight;
+  const edge = kind === "health" ? ACCENT.bloodDark : RAMP.concrete + 2;
+  const x0 = 3;
+  const x1 = 13;
+  const y0 = kind === "weapon" ? 2 : 6;
+  const y1 = 19;
+  for (let y = y0; y < y1; y++) {
+    for (let x = x0; x < x1; x++) {
+      const border = x === x0 || x === x1 - 1 || y === y0 || y === y1 - 1;
+      px[y * PICKUP_W + x] = border ? edge : fill;
+    }
+  }
+  if (kind === "health") {
+    const cx = (x0 + x1) >> 1;
+    const cy = (y0 + y1) >> 1;
+    for (let x = cx - 2; x <= cx + 2; x++) px[cy * PICKUP_W + x] = ACCENT.goldLight;
+    for (let y = cy - 2; y <= cy + 2; y++) px[y * PICKUP_W + cx] = ACCENT.goldLight;
+  }
+  return { width: PICKUP_W, height: PICKUP_H, pixels: px };
 }

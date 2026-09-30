@@ -162,3 +162,25 @@ describe("castColumn", () => {
     expect(hit.dist).toBeCloseTo(1.397, 2);
   });
 });
+
+describe("locked gate", () => {
+  const { map } = parseMap(["#####", "#P.X#", "#####"]);
+
+  it("stops a ray on the closed door", () => {
+    const cam = makeCamera(1.5, 1.5, 0, FOV);
+    const hit = castColumn(map, cam, 0, 32);
+    expect(hit.hit).toBe(true);
+    expect(hit.mapX).toBe(3);
+    expect(hit.mapY).toBe(1);
+    expect(hit.dist).toBeCloseTo(1.5, 10);
+  });
+
+  it("lets a ray through once the gate opens", () => {
+    map.openExits();
+    const cam = makeCamera(1.5, 1.5, 0, FOV);
+    const hit = castColumn(map, cam, 0, 32);
+    expect(hit.hit).toBe(true);
+    expect(hit.mapX).toBe(4);
+    expect(hit.dist).toBeCloseTo(2.5, 10);
+  });
+});

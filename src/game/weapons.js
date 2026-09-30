@@ -74,6 +74,9 @@ export const WEAPONS = {
 /** Index + 1 is the number key that selects the weapon. */
 export const WEAPON_SLOTS = ["pipe", "pistol", "shotgun", "chaingun"];
 
+/** What the player carries at the start of a campaign. */
+export const STARTING_WEAPONS = ["pipe", "pistol"];
+
 export function weaponBySlot(slot) {
   const id = WEAPON_SLOTS[slot - 1];
   return id ? WEAPONS[id] : null;
@@ -86,17 +89,26 @@ export function weaponById(id) {
   return Object.hasOwn(WEAPONS, id) ? WEAPONS[id] : null;
 }
 
-/** Cycles through the carried weapons; `step` is +1 or -1. */
-export function nextWeaponId(id, step) {
-  const at = WEAPON_SLOTS.indexOf(id);
-  if (at < 0) return WEAPON_SLOTS[0];
-  const count = WEAPON_SLOTS.length;
-  return WEAPON_SLOTS[(at + step + count) % count];
+/**
+ * Cycles through the weapons the player actually carries. `owned` defaults
+ * to every slot so callers that have not started tracking loadouts still
+ * wrap the full table.
+ */
+export function nextWeaponId(id, step, owned = WEAPON_SLOTS) {
+  const pool = WEAPON_SLOTS.filter((slot) => owned.includes(slot));
+  const carried = pool.length ? pool : STARTING_WEAPONS;
+  const at = carried.indexOf(id);
+  if (at < 0) return carried[0];
+  return carried[(at + step + carried.length) % carried.length];
+}
+
+export function startingOwned() {
+  return STARTING_WEAPONS.slice();
 }
 
 export function startingMags() {
   const mags = {};
-  for (const id of WEAPON_SLOTS) {
+  for (const id of STARTING_WEAPONS) {
     const weapon = WEAPONS[id];
     if (weapon.kind === "hitscan") mags[id] = weapon.magSize;
   }
@@ -105,8 +117,8 @@ export function startingMags() {
 
 export function startingReserves() {
   return {
-    [AMMO_BULLETS]: 40,
-    [AMMO_SHELLS]: 16,
+    [AMMO_BULLETS]: 24,
+    [AMMO_SHELLS]: 0,
   };
 }
 

@@ -31,7 +31,8 @@ export function createInput(canvas, config) {
     lookDesktop,
     lookPhone,
     onAttack,
-    onSwap,
+    onPrevWeapon,
+    onNextWeapon,
     onReload,
     onRestart,
     onSelectWeapon,
@@ -87,7 +88,8 @@ export function createInput(canvas, config) {
   function onKeyDown(e) {
     keys.add(e.code);
     if (e.code === "KeyR") onReload();
-    if (e.code === "KeyQ" || e.code === "KeyE") onSwap();
+    if (e.code === "KeyQ") onPrevWeapon();
+    if (e.code === "KeyE") onNextWeapon();
     if (e.code === "KeyF") onMelee();
     // Digit1..Digit9 select a weapon directly. Which numbers are valid is the
     // caller's business, not this module's.

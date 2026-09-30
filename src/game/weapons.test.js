@@ -2,10 +2,12 @@ import { describe, expect, it } from "vitest";
 import {
   AMMO_BULLETS,
   AMMO_SHELLS,
+  STARTING_WEAPONS,
   WEAPONS,
   WEAPON_SLOTS,
   nextWeaponId,
   startingMags,
+  startingOwned,
   startingReserves,
   weaponById,
   weaponBySlot,
@@ -116,6 +118,12 @@ describe("nextWeaponId", () => {
   it("falls back to the first slot for an unknown id", () => {
     expect(nextWeaponId("railgun", 1)).toBe(WEAPON_SLOTS[0]);
   });
+
+  it("skips guns the player has not found yet", () => {
+    expect(nextWeaponId("pistol", 1, STARTING_WEAPONS)).toBe("pipe");
+    expect(nextWeaponId("pipe", -1, STARTING_WEAPONS)).toBe("pistol");
+    expect(nextWeaponId("shotgun", 1, STARTING_WEAPONS)).toBe("pipe");
+  });
 });
 
 describe("ammo", () => {
@@ -135,22 +143,22 @@ describe("ammo", () => {
     expect(WEAPONS.chaingun.spreadHeat).toBeGreaterThan(0);
   });
 
-  it("starts every hitscan weapon with a full magazine", () => {
+  it("starts carried hitscan weapons with a full magazine", () => {
     const mags = startingMags();
-    for (const id of WEAPON_SLOTS) {
-      const weapon = WEAPONS[id];
-      if (weapon.kind !== "hitscan") {
-        expect(mags[id]).toBeUndefined();
-        continue;
-      }
-      expect(mags[id]).toBe(weapon.magSize);
-    }
+    expect(mags.pistol).toBe(WEAPONS.pistol.magSize);
+    expect(mags.shotgun).toBeUndefined();
+    expect(mags.chaingun).toBeUndefined();
   });
 
-  it("starts with a reserve for every ammo type in the table", () => {
+  it("starts with pistol bullets and no spare shells", () => {
     const reserves = startingReserves();
     expect(reserves[AMMO_BULLETS]).toBeGreaterThan(0);
-    expect(reserves[AMMO_SHELLS]).toBeGreaterThan(0);
+    expect(reserves[AMMO_SHELLS]).toBe(0);
+  });
+
+  it("starts owning only the pipe and the pistol", () => {
+    expect(startingOwned()).toEqual(STARTING_WEAPONS);
+    expect(STARTING_WEAPONS).toEqual(["pipe", "pistol"]);
   });
 
   it("makes a full reload take long enough to feel like a magazine change", () => {

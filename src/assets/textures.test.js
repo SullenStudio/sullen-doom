@@ -7,6 +7,7 @@ import {
   generateTextures,
   generateTileAt,
   makeEnemySprite,
+  makePickupSprite,
 } from "./textures.js";
 
 describe("generateTextures", () => {
@@ -102,5 +103,23 @@ describe("makeEnemySprite", () => {
     for (const index of sprite.pixels) {
       expect(index === TRANSPARENT || index < PALETTE_SIZE).toBe(true);
     }
+  });
+});
+
+describe("makePickupSprite", () => {
+  it("leaves the corners transparent and paints the centre", () => {
+    for (const kind of ["health", "ammo", "weapon"]) {
+      const sprite = makePickupSprite(kind);
+      expect(sprite.pixels[0]).toBe(TRANSPARENT);
+      const mid =
+        Math.floor(sprite.height / 2) * sprite.width + Math.floor(sprite.width / 2);
+      expect(sprite.pixels[mid]).not.toBe(TRANSPARENT);
+    }
+  });
+
+  it("paints health and ammo differently", () => {
+    const health = makePickupSprite("health");
+    const ammo = makePickupSprite("ammo");
+    expect([...health.pixels]).not.toEqual([...ammo.pixels]);
   });
 });

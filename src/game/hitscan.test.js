@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { parseMap } from "./map.js";
-import { ENEMY_RADIUS, castHitscan, rayCircle, wallDistance } from "./hitscan.js";
+import { ENEMY_RADIUS, castHitscan, hasLineOfSight, rayCircle, wallDistance } from "./hitscan.js";
 
 // Open room, walls on the border only. Interior cells 1..7 on both axes.
 const { map } = parseMap([
@@ -67,6 +67,20 @@ describe("wallDistance", () => {
 
   it("reports maxDist when no wall is within range", () => {
     expect(wallDistance(map, 4.5, 4.5, 1, 0, 1.5)).toBe(1.5);
+  });
+});
+
+describe("hasLineOfSight", () => {
+  it("is clear across open floor", () => {
+    expect(hasLineOfSight(map, 2.5, 2.5, 6.5, 2.5)).toBe(true);
+  });
+
+  it("is blocked by a wall between two rooms", () => {
+    expect(hasLineOfSight(split, 2.5, 2.5, 6.0, 2.5)).toBe(false);
+  });
+
+  it("is clear when the two points are the same", () => {
+    expect(hasLineOfSight(map, 4.5, 4.5, 4.5, 4.5)).toBe(true);
   });
 });
 

@@ -49,11 +49,12 @@ function resolveRay(world, weapon, angle, alreadyHit) {
 
   if (shot.kind === "enemy") {
     alreadyHit?.add(shot.enemy);
+    const wasAlive = shot.enemy.hp > 0;
     shot.enemy.hp -= weapon.damage;
     shot.enemy.hit = HIT_FLASH_T;
     shove(world.map, shot.enemy, dirX * weapon.knockback, dirY * weapon.knockback);
     record.damage = weapon.damage;
-    record.killed = shot.enemy.hp <= 0;
+    record.killed = wasAlive && shot.enemy.hp <= 0;
   }
 
   return record;

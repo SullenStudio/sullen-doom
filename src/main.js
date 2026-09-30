@@ -1,13 +1,14 @@
 import "./style.css";
 import { loadGunSprites } from "./assets/gunsprites.js";
-import { TEXTURE_SLOT, generateTextures, makeEnemySprite } from "./assets/textures.js";
+import { TEXTURE_SLOT, generateTextures, makeEnemySprite, makePickupSprite } from "./assets/textures.js";
 import { createInput, readMoveAxes } from "./core/input.js";
 import { createLoop } from "./core/loop.js";
 import { casingSpawn, fireWeapon, swingMelee } from "./game/combat.js";
-import { ENEMY_RADIUS } from "./game/hitscan.js";
+import { ENEMY_RADIUS, hasLineOfSight } from "./game/hitscan.js";
 import { LEVELS, nextLevelIndex } from "./game/levels.js";
+import { collectPickups, livingEnemyCount, makePickup, rollDrop } from "./game/loot.js";
 import { parseMap } from "./game/map.js";
-import { PLAYER_RADIUS, separateBodies, slideMove } from "./game/move.js";
+import { PLAYER_RADIUS, resolveWallOverlap, separateBodies, slideMove } from "./game/move.js";
 import { createParticles } from "./game/particles.js";
 import { createGameState, createHudBinding } from "./game/state.js";
 import {
@@ -61,6 +62,8 @@ const ammoResEl = document.getElementById("ammo-res");
 const weaponLabelEl = document.getElementById("weapon-label");
 const levelNameEl = document.getElementById("level-name");
 const killEl = document.getElementById("kills");
+const aliveEl = document.getElementById("alive");
+const aliveBlockEl = document.getElementById("alive-block");
 
 // Captured once at load so reset() can restore the menu after die() has
 // overwritten it, without hard-coding wording that lives in index.html.
@@ -83,6 +86,8 @@ const hud = createHudBinding({
   weaponLabel: weaponLabelEl,
   levelName: levelNameEl,
   kills: killEl,
+  alive: aliveEl,
+  aliveBlock: aliveBlockEl,
 });
 
 const input = createInput(canvas, {
@@ -91,7 +96,8 @@ const input = createInput(canvas, {
   lookDesktop: LOOK_DESK,
   lookPhone: LOOK_PHONE,
   onAttack: () => attack(),
-  onSwap: () => swapWeapon(),
+  onPrevWeapon: () => cycleWeapon(-1),
+  onNextWeapon: () => cycleWeapon(1),
   onReload: () => startReload(),
   onRestart: () => onPlay(),
   onSelectWeapon: (slot) => selectWeapon(slot),
@@ -106,6 +112,11 @@ const MAX_DIST = 32;
 const textures = generateTextures(1337);
 const shadeTable = buildShadeTable(PALETTE, SHADE_LEVELS);
 const enemyBitmap = makeEnemySprite(7);
+const pickupBitmaps = {
+  health: makePickupSprite("health"),
+  ammo: makePickupSprite("ammo"),
+  weapon: makePickupSprite("weapon"),
+};
 const particles = createParticles(192);
 
 let presenter = null;
@@ -135,6 +146,7 @@ function applyLevel(index, { keepLoadout, hp } = {}) {
   if (hp != null) state.hp = hp;
   particles.clear();
   firing = false;
+  maybeOpenExits();
 }
 
 function hideOverlay() {
@@ -193,6 +205,7 @@ function completeLevel() {
 function syncHud() {
   const weapon = currentWeapon();
   const hp = Math.max(0, Math.ceil(state.hp));
+  const alive = livingEnemyCount(state.enemies);
   const reloading = state.reloading > 0 && state.reloadId === weapon.id;
   hud.sync({
     hp: String(hp),
@@ -202,19 +215,21 @@ function syncHud() {
     weaponLabel: weapon.name,
     levelName: LEVELS[levelIndex].name,
     kills: String(state.kills),
+    alive: String(alive),
+    aliveTone: alive === 0 ? "clear" : "ok",
   });
 }
 
-function swapWeapon() {
+function cycleWeapon(step) {
   if (state.phase !== "play") return;
-  state.weapon = nextWeaponId(state.weapon, 1);
+  state.weapon = nextWeaponId(state.weapon, step, state.owned);
   firing = false;
   syncHud();
 }
 
 function selectWeapon(slot) {
   const weapon = weaponBySlot(slot);
-  if (!weapon) return;
+  if (!weapon || !state.owned.includes(weapon.id)) return;
   state.weapon = weapon.id;
   syncHud();
 }
@@ -223,6 +238,7 @@ function tryMove(nx, ny) {
   slideMove(map, state.player, nx, ny, {
     blockers: state.enemies,
     minDist: ENEMY_RADIUS + PLAYER_RADIUS,
+    radius: PLAYER_RADIUS,
   });
 }
 
@@ -301,11 +317,7 @@ function applyHits(hits) {
 
     if (hit.killed) {
       state.kills += 1;
-      // A death throws far more, and darker. bloodDark is intrinsically low
-      // contrast at range — darker than the wall it lands on nearly as
-      // often as it's darker than the floor — so this burst leans on sheer
-      // count and spread rather than per-particle visibility to read as a
-      // bigger event than a normal hit.
+      state.pickups.push(makePickup(hit.enemy.x, hit.enemy.y, rollDrop(Math.random, state.owned)));
       particles.spawnBurst(hit.x, hit.y, 0.5, hit.dirX, hit.dirY, 24, {
         colorIndex: ACCENT.bloodDark,
         speed: 3.6,
@@ -360,6 +372,7 @@ function update(dt) {
   state.shake = Math.max(0, state.shake - dt * 3.5);
   state.hitMark = Math.max(0, state.hitMark - dt);
   state.hurt = Math.max(0, state.hurt - dt);
+  state.pickupFlash = Math.max(0, state.pickupFlash - dt);
   state.iframes = Math.max(0, state.iframes - dt);
   state.swing = Math.max(0, state.swing - dt);
   if (state.reloading > 0) {
@@ -394,6 +407,15 @@ function update(dt) {
     state.player.x + (fx * move.y + rx * move.x) * speed * dt,
     state.player.y + (fy * move.y + ry * move.x) * speed * dt,
   );
+  for (const got of collectPickups(state)) {
+    state.pickupFlash = 0.28;
+    state.pickupTint =
+      got.kind === "health"
+        ? rgb(40, 180, 70)
+        : got.kind === "weapon"
+          ? rgb(230, 190, 70)
+          : rgb(200, 160, 40);
+  }
   if (map.isExitAt(state.player.x, state.player.y)) {
     completeLevel();
     return;
@@ -406,12 +428,16 @@ function update(dt) {
     const dx = state.player.x - e.x;
     const dy = state.player.y - e.y;
     const dist = Math.hypot(dx, dy);
-    if (dist > 0.55) {
-      tryEnemyMove(
-        e,
-        e.x + (dx / dist) * ENEMY_SPEED * dt,
-        e.y + (dy / dist) * ENEMY_SPEED * dt,
-      );
+    const canBite =
+      dist <= 0.55 && hasLineOfSight(map, e.x, e.y, state.player.x, state.player.y);
+    if (!canBite) {
+      if (dist > 1e-6) {
+        tryEnemyMove(
+          e,
+          e.x + (dx / dist) * ENEMY_SPEED * dt,
+          e.y + (dy / dist) * ENEMY_SPEED * dt,
+        );
+      }
     } else if (state.iframes <= 0) {
       state.hp -= BITE;
       state.iframes = IFRAMES;
@@ -421,12 +447,21 @@ function update(dt) {
     }
   }
   separateBodies(state.enemies, ENEMY_RADIUS * 2);
+  for (const e of state.enemies) {
+    if (e.hp <= 0) continue;
+    resolveWallOverlap(map, e, ENEMY_RADIUS);
+  }
+  maybeOpenExits();
   particles.update(dt, map);
   syncHud();
 }
 
+function maybeOpenExits() {
+  if (state.enemies.every((e) => e.hp <= 0)) map.openExits();
+}
+
 function tryEnemyMove(e, nx, ny) {
-  slideMove(map, e, nx, ny);
+  slideMove(map, e, nx, ny, { radius: ENEMY_RADIUS });
 }
 
 function die() {
@@ -459,16 +494,25 @@ function draw() {
     horizon,
   });
 
-  renderSprites(
-    fb,
-    camera,
-    state.enemies.filter((e) => e.hp > 0).map((e) => ({
+  const worldSprites = state.enemies
+    .filter((e) => e.hp > 0)
+    .map((e) => ({
       x: e.x,
       y: e.y,
       hit: e.hit,
       bitmap: enemyBitmap,
-    })),
-    {
+    }));
+  for (const p of state.pickups) {
+    if (p.taken) continue;
+    worldSprites.push({
+      x: p.x,
+      y: p.y,
+      hit: 0,
+      scale: 0.32,
+      bitmap: pickupBitmaps[p.kind] ?? pickupBitmaps.ammo,
+    });
+  }
+  renderSprites(fb, camera, worldSprites, {
       shadeTable,
       paletteSize: PALETTE_SIZE,
       zbuf,
@@ -502,6 +546,7 @@ function draw() {
     renderCrosshair(fb, shadeTable, PALETTE_SIZE, state.hitMark);
   }
   if (state.hurt > 0) renderFlash(fb, rgb(180, 20, 10), state.hurt);
+  if (state.pickupFlash > 0) renderFlash(fb, state.pickupTint, state.pickupFlash);
   if (state.iframes > 0 && state.phase === "play") {
     renderFlash(fb, rgb(255, 255, 255), 0.1 * Math.abs(Math.sin(state.iframes * 28)));
   }
@@ -537,7 +582,7 @@ playBtn.addEventListener("click", () => onPlay());
 document.getElementById("btn-swap").addEventListener("pointerdown", (e) => {
   e.preventDefault();
   e.stopPropagation();
-  swapWeapon();
+  cycleWeapon(1);
 });
 document.getElementById("btn-fire").addEventListener("pointerdown", (e) => {
   e.preventDefault();

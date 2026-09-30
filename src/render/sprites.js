@@ -41,7 +41,7 @@ export function renderSprites(fb, camera, sprites, options) {
 
   for (const { sprite, depth, screenX } of visible) {
     const bitmap = sprite.bitmap;
-    const drawH = Math.round((height / depth) * scale);
+    const drawH = Math.round((height / depth) * (sprite.scale ?? scale));
     if (drawH <= 0) continue;
     const drawW = Math.round(drawH * (bitmap.width / bitmap.height));
     if (drawW <= 0) continue;

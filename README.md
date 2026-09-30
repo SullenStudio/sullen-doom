@@ -14,11 +14,14 @@ Indexed pixel viewmodels stay as a fallback if the sheets fail to load.
 | WASD / arrows | move |
 | mouse | look |
 | click / space | fire |
-| 1–4 / Q | weapons |
-| walk onto the exit | next map |
+| 1–4 | select a carried weapon |
+| Q / E | previous / next carried weapon |
+| walk over a drop | ammo, medkit, or a found gun |
+| walk through the open gate | next map (gate opens when the map is clear) |
 | Phone | left stick + FIRE, drag the view to look |
 
-Best kill count is stored in `localStorage`.
+Best kill count is stored in `localStorage`. Campaigns start with the pipe
+and pistol; shotgun and chaingun drop from killed enemies.
 
 ```bash
 npm install

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { parseMap } from "./map.js";
+import { TEXTURE_SLOT } from "../assets/textures.js";
 
 const LINES = [
   "#####",
@@ -74,11 +75,18 @@ describe("parseMap", () => {
     expect(enemySpawns).toEqual([{ x: 2.5, y: 2.5 }]);
   });
 
-  it("treats X as a walkable exit, not a wall", () => {
+  it("treats X as a locked door until the map is cleared", () => {
     const { map, exits } = parseMap(["#####", "#P.X#", "#####"]);
+    expect(map.exitsOpen).toBe(false);
+    expect(map.isSolidAt(3.5, 1.5)).toBe(true);
+    expect(map.isExitAt(3.5, 1.5)).toBe(false);
+    expect(map.textureAt(3, 1)).toBe(TEXTURE_SLOT.door);
+    expect(exits).toEqual([{ x: 3.5, y: 1.5 }]);
+
+    map.openExits();
+    expect(map.exitsOpen).toBe(true);
     expect(map.isSolidAt(3.5, 1.5)).toBe(false);
     expect(map.isExitAt(3.5, 1.5)).toBe(true);
     expect(map.isExitAt(2.5, 1.5)).toBe(false);
-    expect(exits).toEqual([{ x: 3.5, y: 1.5 }]);
   });
 });
